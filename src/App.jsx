@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { CHANNEL_PROMPTS } from './config/bible.js';
+import { CHANNEL_PROMPTS, CHANNELS } from './config/bible.js';
 import { generateContent } from './services/api.js';
 
 // ── Loading dots ──
@@ -86,9 +86,20 @@ export default function App() {
   const [loading, setLoading] = useState({});
   const [error, setError] = useState({});
   const [generatingAll, setGeneratingAll] = useState(false);
+  const [pipeline, setPipeline] = useState({ running: false, step: '', status: '', result: null, error: null });
+  const [serverOnline, setServerOnline] = useState(null);
   const inputRef = useRef(null);
 
+  const PIPELINE_URL = 'http://localhost:5050';
+
   useEffect(() => { inputRef.current?.focus(); }, []);
+
+  // 서버 상태 확인
+  useEffect(() => {
+    fetch(`${PIPELINE_URL}/api/health`).then(r => r.json())
+      .then(() => setServerOnline(true))
+      .catch(() => setServerOnline(false));
+  }, []);
 
   const handleGenerate = async (channel) => {
     if (!topic.trim()) return;
@@ -112,6 +123,46 @@ export default function App() {
       await handleGenerate(ch);
     }
     setGeneratingAll(false);
+  };
+
+  // 파이프라인 실행 (로컬 서버 호출)
+  const runPipeline = async () => {
+    if (!topic.trim() || pipeline.running) return;
+    setPipeline({ running: true, step: '시작 중...', status: 'running', result: null, error: null });
+
+    try {
+      const res = await fetch(`${PIPELINE_URL}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: topic.trim(), context: context.trim(), upload: false }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      const jobId = data.job_id;
+
+      // 폴링으로 상태 확인
+      const poll = setInterval(async () => {
+        try {
+          const sr = await fetch(`${PIPELINE_URL}/api/status/${jobId}`);
+          const sj = await sr.json();
+          setPipeline(prev => ({ ...prev, step: sj.step || '' }));
+
+          if (sj.status === 'done') {
+            clearInterval(poll);
+            setPipeline({ running: false, step: '완료', status: 'done', result: sj.result, error: null });
+          } else if (sj.status === 'error') {
+            clearInterval(poll);
+            setPipeline({ running: false, step: '', status: 'error', result: null, error: sj.error });
+          }
+        } catch (e) {
+          clearInterval(poll);
+          setPipeline({ running: false, step: '', status: 'error', result: null, error: '서버 연결 끊김' });
+        }
+      }, 2000);
+    } catch (err) {
+      setPipeline({ running: false, step: '', status: 'error', result: null, error: err.message });
+    }
   };
 
   const channelKeys = ['youtube', 'x', 'blog'];
@@ -138,6 +189,23 @@ export default function App() {
           <p style={{ fontSize: 12, color: '#888', margin: '4px 0 0', fontWeight: 500 }}>
             정치 콘텐츠 에이전트 · "무딘 척하지만, 벤다."
           </p>
+          {/* ── SNS Links ── */}
+          <div style={{
+            display: 'flex', justifyContent: 'center', gap: 8, marginTop: 12,
+          }}>
+            {Object.entries(CHANNELS).map(([key, ch]) => (
+              <a key={key} href={ch.url} target="_blank" rel="noopener noreferrer" style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '5px 12px', borderRadius: 8,
+                background: `${ch.color}10`, border: `1px solid ${ch.color}25`,
+                fontSize: 11, fontWeight: 600, color: ch.color,
+                textDecoration: 'none', transition: 'all 0.2s',
+              }}>
+                <span style={{ fontSize: 13 }}>{ch.icon}</span>
+                {ch.label}
+              </a>
+            ))}
+          </div>
         </div>
 
         {/* ── Input Section ── */}
@@ -197,8 +265,45 @@ export default function App() {
           >
             {generatingAll ? (
               <span style={{ animation: 'pulse 1.5s infinite' }}>⚡ 3채널 생성 중...</span>
-            ) : '⚡ 3채널 한번에 생성'}
+            ) : '⚡ 3채널 텍스트 생성'}
           </button>
+
+          {/* 파이프라인 버튼 */}
+          <button
+            onClick={runPipeline}
+            disabled={!topic.trim() || pipeline.running || serverOnline === false}
+            style={{
+              width: '100%', marginTop: 8, padding: '12px', borderRadius: 10, border: 'none',
+              background: topic.trim() && !pipeline.running && serverOnline
+                ? 'linear-gradient(135deg, #2D2D2D, #444)' : '#DDD',
+              color: topic.trim() && !pipeline.running && serverOnline ? '#FFF' : '#999',
+              fontSize: 14, fontWeight: 700,
+              cursor: topic.trim() && !pipeline.running && serverOnline ? 'pointer' : 'default',
+              fontFamily: 'inherit', transition: 'all 0.2s',
+            }}
+          >
+            {pipeline.running ? (
+              <span style={{ animation: 'pulse 1.5s infinite' }}>🎬 {pipeline.step}</span>
+            ) : '🎬 YouTube 영상 자동 생성'}
+          </button>
+
+          {serverOnline === false && (
+            <div style={{
+              marginTop: 8, padding: '8px 12px', borderRadius: 8,
+              background: '#FFF5F5', border: '1px solid #FED7D7',
+              fontSize: 11, color: '#C53030', lineHeight: 1.5,
+            }}>
+              ⚠️ 로컬 파이프라인 서버가 꺼져 있습니다. PC에서 <code style={{ background: '#EEE', padding: '1px 4px', borderRadius: 3 }}>python server.py</code>를 실행하세요.
+            </div>
+          )}
+
+          {serverOnline === true && !pipeline.running && (
+            <div style={{
+              marginTop: 6, fontSize: 10, color: '#2D8544', textAlign: 'center',
+            }}>
+              ● 파이프라인 서버 연결됨
+            </div>
+          )}
         </div>
 
         {/* ── Channel Tabs ── */}
@@ -315,6 +420,37 @@ export default function App() {
           </div>
         )}
 
+        {/* ── Pipeline Result ── */}
+        {pipeline.status === 'done' && pipeline.result && (
+          <div style={{
+            marginTop: 20, background: '#F0FFF4', border: '1px solid #C6F6D5',
+            borderRadius: 12, padding: '16px', animation: 'fadeIn 0.4s ease',
+          }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#276749', marginBottom: 10 }}>
+              🎬 영상 생성 완료!
+            </div>
+            <div style={{ fontSize: 13, color: '#2D2D2D', lineHeight: 1.7 }}>
+              <p><strong>제목:</strong> {pipeline.result.title}</p>
+              <p><strong>출력 폴더:</strong> <code style={{ background: '#EEE', padding: '2px 6px', borderRadius: 3, fontSize: 11 }}>{pipeline.result.output_dir}</code></p>
+              {pipeline.result.video_url && (
+                <p><strong>YouTube:</strong> <a href={pipeline.result.video_url} target="_blank" rel="noopener noreferrer" style={{ color: '#C53030' }}>{pipeline.result.video_url}</a></p>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: '#888', marginTop: 8 }}>
+              PC의 output 폴더에서 video.mp4, thumbnail.jpg, script.txt를 확인하세요.
+            </div>
+          </div>
+        )}
+
+        {pipeline.status === 'error' && (
+          <div style={{
+            marginTop: 20, background: '#FFF5F5', border: '1px solid #FED7D7',
+            borderRadius: 12, padding: '14px', fontSize: 13, color: '#C53030',
+          }}>
+            ⚠️ 파이프라인 오류: {pipeline.error}
+          </div>
+        )}
+
         {/* ── Bible Reference ── */}
         <details style={{ marginTop: 20 }}>
           <summary style={{ fontSize: 12, fontWeight: 600, color: '#888', cursor: 'pointer', padding: '8px 0' }}>
@@ -340,9 +476,19 @@ export default function App() {
         <div style={{
           marginTop: 30, textAlign: 'center',
           padding: '16px 0', borderTop: '1px solid #E0DDD6',
-          fontSize: 11, color: '#AAA',
         }}>
-          BluntEdge Content Agent v1.0 · Powered by Claude
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginBottom: 8 }}>
+            {Object.entries(CHANNELS).map(([key, ch]) => (
+              <a key={key} href={ch.url} target="_blank" rel="noopener noreferrer" style={{
+                fontSize: 11, color: '#888', textDecoration: 'none',
+              }}>
+                {ch.icon} {ch.label}
+              </a>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, color: '#AAA' }}>
+            BluntEdge Content Agent v1.1 · Powered by Claude
+          </div>
         </div>
       </div>
     </div>

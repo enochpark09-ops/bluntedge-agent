@@ -209,6 +209,35 @@ export default function App() {
           </div>
         </div>
 
+        {/* ── 주요 일간지 사설 바로가기 ── */}
+        <div style={{ background: '#FFF', borderRadius: 14, padding: '16px', border: '1px solid #E0DDD6', marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.03)' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 10 }}>📰 주요 일간지 사설</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            {[
+              { name: '조선일보', url: 'https://www.chosun.com/opinion/editorial/', color: '#003876' },
+              { name: '중앙일보', url: 'https://www.joongang.co.kr/opinion/editorial', color: '#E3000F' },
+              { name: '동아일보', url: 'https://www.donga.com/news/Opinion/Editorial', color: '#003DA5' },
+              { name: '한겨레', url: 'https://www.hani.co.kr/arti/opinion/editorial', color: '#00A651' },
+              { name: '경향신문', url: 'https://www.khan.co.kr/opinion/editorial', color: '#FF6600' },
+              { name: '한국일보', url: 'https://www.hankookilbo.com/News/Opinion/Editorial', color: '#0066CC' },
+              { name: '매일경제', url: 'https://www.mk.co.kr/opinion/editorial', color: '#1A1A1A' },
+              { name: '한국경제', url: 'https://www.hankyung.com/opinion/editorial', color: '#C53030' },
+            ].map((p) => (
+              <a key={p.name} href={p.url} target="_blank" rel="noopener noreferrer" style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', borderRadius: 8,
+                background: '#FAFAF8', border: '1px solid #EDE9E0', textDecoration: 'none',
+                fontSize: 12, fontWeight: 600, color: p.color, transition: 'all 0.2s',
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.color, flexShrink: 0 }} />
+                {p.name} 사설
+              </a>
+            ))}
+          </div>
+          <div style={{ fontSize: 10, color: '#AAA', marginTop: 8, lineHeight: 1.5 }}>
+            💡 사설 본문을 복사해서 아래 "추가 맥락"에 붙여넣으면 최신 이슈 기반 콘텐츠가 생성됩니다.
+          </div>
+        </div>
+
         {/* ── Input ── */}
         <div style={{ background: '#FFF', borderRadius: 14, padding: '20px', border: '1px solid #E0DDD6', marginBottom: 16, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
           <label style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 8, display: 'block' }}>📰 오늘의 이슈</label>

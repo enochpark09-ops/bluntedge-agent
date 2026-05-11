@@ -65,7 +65,7 @@ function pollJob(jobId, onUpdate, onDone, onError) {
       const r = await fetch(`${PIPELINE_URL}/api/status/${jobId}`);
       const j = await r.json();
       onUpdate(j);
-      if (j.status === 'done' || j.status === 'review') { clearInterval(poll); onDone(j); }
+      if (j.status === 'done' || j.status === 'review' || j.status === 'thumbnail_select') { clearInterval(poll); onDone(j); }
       else if (j.status === 'error') { clearInterval(poll); onError(j.error); }
     } catch (e) { clearInterval(poll); onError('서버 연결 끊김'); }
   }, 1500);

@@ -89,7 +89,7 @@ export default function App() {
   const [editorialTitle, setEditorialTitle] = useState('');
   const [editorialContent, setEditorialContent] = useState('');
 
-  // 파이프라인 2단계 상태
+  // 파이프라인 상태: idle | scripting | review | rendering | thumbnail | uploading | done | error
   const [pipeStep, setPipeStep] = useState('idle');
   const [pipeMsg, setPipeMsg] = useState('');
   const [editTitle, setEditTitle] = useState('');
@@ -97,6 +97,8 @@ export default function App() {
   const [editDesc, setEditDesc] = useState('');
   const [pipeResult, setPipeResult] = useState(null);
   const [pipeError, setPipeError] = useState('');
+  const [thumbCandidates, setThumbCandidates] = useState([]);
+  const [videoData, setVideoData] = useState(null); // video_path, output_dir 저장
 
   useEffect(() => { inputRef.current?.focus(); }, []);
   useEffect(() => {
@@ -160,29 +162,73 @@ export default function App() {
     } catch (err) { setPipeStep('error'); setPipeError(err.message); }
   };
 
-  // 파이프라인 Step 2: 영상 생성
+  // 파이프라인 Step 2: 영상 생성 → 썸네일 후보 표시
   const startVideoGeneration = async (newspaper = null) => {
     setPipeStep('rendering');
     setPipeMsg('음성 생성 중...');
 
-    const videoData = {
+    const vd = {
       title: editTitle.trim(),
       script: editScript.trim(),
       description: editDesc.trim(),
-      upload: false,
     };
 
     if (newspaper) {
-      videoData.newspaper_logo = newspaper.logo;
-      videoData.newspaper_name = newspaper.name;
-      videoData.newspaper_color = newspaper.color;
+      vd.newspaper_logo = newspaper.logo;
+      vd.newspaper_name = newspaper.name;
+      vd.newspaper_color = newspaper.color;
     }
 
     try {
       const res = await fetch(`${PIPELINE_URL}/api/video`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(videoData),
+        body: JSON.stringify(vd),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      pollJob(data.job_id,
+        (j) => setPipeMsg(j.step || ''),
+        (j) => {
+          if (j.status === 'thumbnail_select' && j.result) {
+            setThumbCandidates(j.result.thumbnail_candidates || []);
+            setVideoData({
+              video_path: j.result.video_path,
+              output_dir: j.result.output_dir,
+              title: j.result.title,
+              script: j.result.script,
+              description: j.result.description,
+            });
+            setPipeStep('thumbnail');
+          } else if (j.status === 'done') {
+            setPipeStep('done');
+            setPipeResult(j.result);
+          }
+        },
+        (err) => { setPipeStep('error'); setPipeError(err); },
+      );
+    } catch (err) { setPipeStep('error'); setPipeError(err.message); }
+  };
+
+  // 파이프라인 Step 3: 썸네일 선택 → YouTube 공개 업로드
+  const startUpload = async (selectedThumbText) => {
+    if (!videoData) return;
+    setPipeStep('uploading');
+    setPipeMsg('썸네일 생성 + YouTube 업로드 중...');
+
+    try {
+      const res = await fetch(`${PIPELINE_URL}/api/upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: videoData.title,
+          script: videoData.script,
+          description: videoData.description,
+          video_path: videoData.video_path,
+          output_dir: videoData.output_dir,
+          thumbnail_text: selectedThumbText,
+        }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -200,6 +246,8 @@ export default function App() {
     setPipeMsg('');
     setPipeResult(null);
     setPipeError('');
+    setThumbCandidates([]);
+    setVideoData(null);
   };
 
   const channelKeys = ['youtube', 'x', 'blog'];
@@ -360,25 +408,63 @@ export default function App() {
             )}
 
             {/* 진행 중 */}
-            {(pipeStep === 'scripting' || pipeStep === 'rendering') && (
+            {(pipeStep === 'scripting' || pipeStep === 'rendering' || pipeStep === 'uploading') && (
               <div style={{ textAlign: 'center', padding: '40px 0', animation: 'fadeIn 0.3s ease' }}>
                 <div style={{ fontSize: 36, marginBottom: 12, animation: 'pulse 1.5s infinite' }}>
-                  {pipeStep === 'scripting' ? '📝' : '🎬'}
+                  {pipeStep === 'scripting' ? '📝' : pipeStep === 'uploading' ? '📤' : '🎬'}
                 </div>
                 <div style={{ fontSize: 14, fontWeight: 600, color: '#555' }}>{pipeMsg}<LoadingDots /></div>
+              </div>
+            )}
+
+            {/* 썸네일 선택 */}
+            {pipeStep === 'thumbnail' && thumbCandidates.length > 0 && (
+              <div style={{ background: '#FFF', borderRadius: 14, padding: '20px', border: '2px solid #C53030', marginBottom: 16, animation: 'fadeIn 0.4s ease' }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#C53030', marginBottom: 6 }}>🖼️ 썸네일 멘트 선택</div>
+                <div style={{ fontSize: 12, color: '#888', marginBottom: 16 }}>영상에 사용할 썸네일 문구를 선택하세요. 선택하면 바로 YouTube에 공개 업로드됩니다.</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {thumbCandidates.map((txt, i) => (
+                    <button key={i} onClick={() => startUpload(txt)}
+                      style={{
+                        padding: '16px', borderRadius: 10,
+                        background: '#1A1A1A', border: '2px solid #333',
+                        color: '#FFF', fontSize: 18, fontWeight: 800,
+                        cursor: 'pointer', fontFamily: 'inherit',
+                        textAlign: 'center', transition: 'all 0.2s',
+                        letterSpacing: -0.5,
+                      }}
+                      onMouseEnter={e => { e.target.style.borderColor = '#C53030'; e.target.style.transform = 'scale(1.02)'; }}
+                      onMouseLeave={e => { e.target.style.borderColor = '#333'; e.target.style.transform = 'scale(1)'; }}
+                    >
+                      {txt}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={resetPipeline}
+                  style={{ width: '100%', marginTop: 12, padding: '10px', borderRadius: 8, border: '1px solid #E0DDD6', background: '#FFF', color: '#777', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  취소 (업로드 안 함)
+                </button>
               </div>
             )}
 
             {/* 완료 */}
             {pipeStep === 'done' && pipeResult && (
               <div style={{ background: '#F0FFF4', border: '1px solid #C6F6D5', borderRadius: 14, padding: '20px', marginBottom: 16, animation: 'fadeIn 0.4s ease' }}>
-                <div style={{ fontSize: 15, fontWeight: 800, color: '#276749', marginBottom: 12 }}>✅ 사설 쇼츠 완성!</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#276749', marginBottom: 12 }}>
+                  {pipeResult.video_url ? '✅ YouTube 업로드 완료!' : '✅ 영상 생성 완료!'}
+                </div>
                 <div style={{ fontSize: 13, color: '#2D2D2D', lineHeight: 1.8 }}>
                   <p><strong>제목:</strong> {pipeResult.title}</p>
+                  {pipeResult.video_url && (
+                    <p><strong>YouTube:</strong> <a href={pipeResult.video_url} target="_blank" rel="noopener noreferrer" style={{ color: '#C53030', fontWeight: 600 }}>{pipeResult.video_url}</a></p>
+                  )}
+                  {pipeResult.thumbnail_text && (
+                    <p><strong>썸네일:</strong> {pipeResult.thumbnail_text}</p>
+                  )}
                   <p><strong>출력:</strong> <code style={{ background: '#E2E8F0', padding: '2px 8px', borderRadius: 4, fontSize: 11 }}>{pipeResult.output_dir}</code></p>
                 </div>
                 <button onClick={resetPipeline} style={{ marginTop: 12, padding: '8px 16px', borderRadius: 8, border: '1px solid #C6F6D5', background: '#FFF', color: '#276749', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  🔄 새로운 사설 쇼츠 만들기
+                  🔄 새로운 콘텐츠 만들기
                 </button>
               </div>
             )}
@@ -484,18 +570,54 @@ export default function App() {
 
             {pipeStep === 'done' && pipeResult && (
               <div style={{ background: '#F0FFF4', border: '1px solid #C6F6D5', borderRadius: 14, padding: '20px', marginBottom: 16, animation: 'fadeIn 0.4s ease' }}>
-                <div style={{ fontSize: 15, fontWeight: 800, color: '#276749', marginBottom: 12 }}>✅ 영상 생성 완료!</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#276749', marginBottom: 12 }}>
+                  {pipeResult.video_url ? '✅ YouTube 업로드 완료!' : '✅ 영상 생성 완료!'}
+                </div>
                 <div style={{ fontSize: 13, color: '#2D2D2D', lineHeight: 1.8 }}>
                   <p><strong>제목:</strong> {pipeResult.title}</p>
+                  {pipeResult.video_url && (
+                    <p><strong>YouTube:</strong> <a href={pipeResult.video_url} target="_blank" rel="noopener noreferrer" style={{ color: '#C53030', fontWeight: 600 }}>{pipeResult.video_url}</a></p>
+                  )}
+                  {pipeResult.thumbnail_text && (
+                    <p><strong>썸네일:</strong> {pipeResult.thumbnail_text}</p>
+                  )}
                   <p><strong>출력:</strong> <code style={{ background: '#E2E8F0', padding: '2px 8px', borderRadius: 4, fontSize: 11 }}>{pipeResult.output_dir}</code></p>
                 </div>
                 <button onClick={resetPipeline} style={{ marginTop: 12, padding: '8px 16px', borderRadius: 8, border: '1px solid #C6F6D5', background: '#FFF', color: '#276749', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>🔄 새로운 영상 만들기</button>
               </div>
             )}
 
-            {(pipeStep === 'scripting' || pipeStep === 'rendering') && (
+            {/* 썸네일 선택 (일반) */}
+            {pipeStep === 'thumbnail' && thumbCandidates.length > 0 && (
+              <div style={{ background: '#FFF', borderRadius: 14, padding: '20px', border: '2px solid #C53030', marginBottom: 16, animation: 'fadeIn 0.4s ease' }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#C53030', marginBottom: 6 }}>🖼️ 썸네일 멘트 선택</div>
+                <div style={{ fontSize: 12, color: '#888', marginBottom: 16 }}>선택하면 바로 YouTube에 공개 업로드됩니다.</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {thumbCandidates.map((txt, i) => (
+                    <button key={i} onClick={() => startUpload(txt)}
+                      style={{
+                        padding: '16px', borderRadius: 10,
+                        background: '#1A1A1A', border: '2px solid #333',
+                        color: '#FFF', fontSize: 18, fontWeight: 800,
+                        cursor: 'pointer', fontFamily: 'inherit',
+                        textAlign: 'center', transition: 'all 0.2s',
+                      }}
+                      onMouseEnter={e => { e.target.style.borderColor = '#C53030'; e.target.style.transform = 'scale(1.02)'; }}
+                      onMouseLeave={e => { e.target.style.borderColor = '#333'; e.target.style.transform = 'scale(1)'; }}
+                    >{txt}</button>
+                  ))}
+                </div>
+                <button onClick={resetPipeline} style={{ width: '100%', marginTop: 12, padding: '10px', borderRadius: 8, border: '1px solid #E0DDD6', background: '#FFF', color: '#777', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  취소 (업로드 안 함)
+                </button>
+              </div>
+            )}
+
+            {(pipeStep === 'scripting' || pipeStep === 'rendering' || pipeStep === 'uploading') && (
               <div style={{ textAlign: 'center', padding: '40px 0', animation: 'fadeIn 0.3s ease' }}>
-                <div style={{ fontSize: 36, marginBottom: 12, animation: 'pulse 1.5s infinite' }}>{pipeStep === 'scripting' ? '📝' : '🎬'}</div>
+                <div style={{ fontSize: 36, marginBottom: 12, animation: 'pulse 1.5s infinite' }}>
+                  {pipeStep === 'scripting' ? '📝' : pipeStep === 'uploading' ? '📤' : '🎬'}
+                </div>
                 <div style={{ fontSize: 14, fontWeight: 600, color: '#555' }}>{pipeMsg}<LoadingDots /></div>
               </div>
             )}
@@ -581,7 +703,7 @@ export default function App() {
               <a key={key} href={ch.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#888', textDecoration: 'none' }}>{ch.icon} {ch.label}</a>
             ))}
           </div>
-          <div style={{ fontSize: 11, color: '#AAA' }}>BluntEdge Content Agent v1.5 · Powered by Claude</div>
+          <div style={{ fontSize: 11, color: '#AAA' }}>BluntEdge Content Agent v2.1 · Powered by Claude</div>
         </div>
       </div>
     </div>

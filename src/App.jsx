@@ -98,7 +98,8 @@ export default function App() {
   const [pipeResult, setPipeResult] = useState(null);
   const [pipeError, setPipeError] = useState('');
   const [thumbCandidates, setThumbCandidates] = useState([]);
-  const [videoData, setVideoData] = useState(null); // video_path, output_dir 저장
+  const [videoData, setVideoData] = useState(null);
+  const [publishChannels, setPublishChannels] = useState({ youtube: true, blog: true, x: false }); // video_path, output_dir 저장
 
   useEffect(() => { inputRef.current?.focus(); }, []);
   useEffect(() => {
@@ -215,7 +216,7 @@ export default function App() {
   const startUpload = async (selectedThumbText) => {
     if (!videoData) return;
     setPipeStep('uploading');
-    setPipeMsg('썸네일 생성 + YouTube 업로드 중...');
+    setPipeMsg('콘텐츠 발행 중...');
 
     try {
       const res = await fetch(`${PIPELINE_URL}/api/upload`, {
@@ -228,6 +229,9 @@ export default function App() {
           video_path: videoData.video_path,
           output_dir: videoData.output_dir,
           thumbnail_text: selectedThumbText,
+          publish_youtube: publishChannels.youtube,
+          publish_blog: publishChannels.blog,
+          publish_x: publishChannels.x,
         }),
       });
       const data = await res.json();
@@ -391,11 +395,41 @@ export default function App() {
                 <label style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 6, display: 'block' }}>영상 설명</label>
                 <textarea value={editDesc} onChange={e => setEditDesc(e.target.value)} rows={4}
                   style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #E0DDD6', fontSize: 13, fontFamily: 'inherit', lineHeight: 1.7, marginBottom: 14, resize: 'vertical' }} />
+
+                {/* 발행 채널 선택 */}
+                <div style={{ marginBottom: 14, padding: '12px', background: '#F5F3EE', borderRadius: 10 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 8 }}>📢 발행 채널 선택</div>
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    {[
+                      { key: 'youtube', icon: '▶️', label: 'YouTube 쇼츠' },
+                      { key: 'blog', icon: '📝', label: '블로그' },
+                      { key: 'x', icon: '𝕏', label: 'X 스레드' },
+                    ].map(ch => (
+                      <label key={ch.key} style={{
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px',
+                        borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                        background: publishChannels[ch.key] ? '#C5303015' : '#FFF',
+                        border: publishChannels[ch.key] ? '1.5px solid #C53030' : '1.5px solid #E0DDD6',
+                        color: publishChannels[ch.key] ? '#C53030' : '#999',
+                        transition: 'all 0.2s',
+                      }}>
+                        <input type="checkbox" checked={publishChannels[ch.key]}
+                          onChange={e => setPublishChannels(p => ({ ...p, [ch.key]: e.target.checked }))}
+                          style={{ accentColor: '#C53030' }} />
+                        <span>{ch.icon}</span>{ch.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={() => startVideoGeneration(selectedPaper)}
+                    disabled={!publishChannels.youtube && !publishChannels.blog && !publishChannels.x}
                     style={{ flex: 2, padding: '12px', borderRadius: 10, border: 'none',
-                      background: `linear-gradient(135deg, ${selectedPaper?.color || '#C53030'}, ${selectedPaper?.color || '#C53030'}CC)`,
-                      color: '#FFF', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      background: (publishChannels.youtube || publishChannels.blog || publishChannels.x)
+                        ? `linear-gradient(135deg, ${selectedPaper?.color || '#C53030'}, ${selectedPaper?.color || '#C53030'}CC)` : '#DDD',
+                      color: (publishChannels.youtube || publishChannels.blog || publishChannels.x) ? '#FFF' : '#999',
+                      fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                     🎬 사설 쇼츠 영상 만들기
                   </button>
                   <button onClick={resetPipeline}
@@ -457,6 +491,9 @@ export default function App() {
                   <p><strong>제목:</strong> {pipeResult.title}</p>
                   {pipeResult.video_url && (
                     <p><strong>YouTube:</strong> <a href={pipeResult.video_url} target="_blank" rel="noopener noreferrer" style={{ color: '#C53030', fontWeight: 600 }}>{pipeResult.video_url}</a></p>
+                  )}
+                  {pipeResult.blog_url && (
+                    <p><strong>블로그:</strong> <a href={pipeResult.blog_url} target="_blank" rel="noopener noreferrer" style={{ color: '#C53030', fontWeight: 600 }}>{pipeResult.blog_url}</a></p>
                   )}
                   {pipeResult.thumbnail_text && (
                     <p><strong>썸네일:</strong> {pipeResult.thumbnail_text}</p>
@@ -557,9 +594,40 @@ export default function App() {
                 <label style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 6, display: 'block' }}>영상 설명</label>
                 <textarea value={editDesc} onChange={e => setEditDesc(e.target.value)} rows={4}
                   style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #E0DDD6', fontSize: 13, fontFamily: 'inherit', lineHeight: 1.7, marginBottom: 14, resize: 'vertical' }} />
+
+                {/* 발행 채널 선택 */}
+                <div style={{ marginBottom: 14, padding: '12px', background: '#F5F3EE', borderRadius: 10 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 8 }}>📢 발행 채널 선택</div>
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    {[
+                      { key: 'youtube', icon: '▶️', label: 'YouTube 쇼츠' },
+                      { key: 'blog', icon: '📝', label: '블로그' },
+                      { key: 'x', icon: '𝕏', label: 'X 스레드' },
+                    ].map(ch => (
+                      <label key={ch.key} style={{
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px',
+                        borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                        background: publishChannels[ch.key] ? '#C5303015' : '#FFF',
+                        border: publishChannels[ch.key] ? '1.5px solid #C53030' : '1.5px solid #E0DDD6',
+                        color: publishChannels[ch.key] ? '#C53030' : '#999',
+                        transition: 'all 0.2s',
+                      }}>
+                        <input type="checkbox" checked={publishChannels[ch.key]}
+                          onChange={e => setPublishChannels(p => ({ ...p, [ch.key]: e.target.checked }))}
+                          style={{ accentColor: '#C53030' }} />
+                        <span>{ch.icon}</span>{ch.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={() => startVideoGeneration()}
-                    style={{ flex: 2, padding: '12px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#C53030,#9B2C2C)', color: '#FFF', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    disabled={!publishChannels.youtube && !publishChannels.blog && !publishChannels.x}
+                    style={{ flex: 2, padding: '12px', borderRadius: 10, border: 'none',
+                      background: (publishChannels.youtube || publishChannels.blog || publishChannels.x) ? 'linear-gradient(135deg,#C53030,#9B2C2C)' : '#DDD',
+                      color: (publishChannels.youtube || publishChannels.blog || publishChannels.x) ? '#FFF' : '#999',
+                      fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                     🎬 이 스크립트로 영상 만들기
                   </button>
                   <button onClick={resetPipeline}

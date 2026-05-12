@@ -350,8 +350,22 @@ export default function App() {
 
             {/* 서버 상태 */}
             {serverOnline === false && (
-              <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: '#FFF5F5', border: '1px solid #FED7D7', fontSize: 11, color: '#C53030', lineHeight: 1.5 }}>
-                ⚠️ 로컬 서버가 꺼져 있습니다. PC에서 <code style={{ background: '#EEE', padding: '1px 4px', borderRadius: 3 }}>python server.py</code>를 실행하세요.
+              <div style={{ marginTop: 8, padding: '12px', borderRadius: 10, background: '#FFF5F5', border: '1px solid #FED7D7', fontSize: 12, color: '#C53030', lineHeight: 1.6 }}>
+                ⚠️ 로컬 서버가 꺼져 있습니다. 아래 명령어를 복사해서 명령 프롬프트에 붙여넣으세요.
+                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                  <code style={{ flex: 1, background: '#1A1A1A', color: '#00FF41', padding: '10px 12px', borderRadius: 8, fontSize: 11, fontFamily: 'monospace', display: 'block', lineHeight: 1.5 }}>
+                    cd C:\bluntedge-pipeline-v1.0\bluntedge-pipeline && python server.py
+                  </code>
+                  <button onClick={() => {
+                    navigator.clipboard.writeText('cd C:\\bluntedge-pipeline-v1.0\\bluntedge-pipeline && python server.py');
+                    const btn = document.getElementById('copy-cmd-btn');
+                    if (btn) { btn.textContent = '✓'; setTimeout(() => { btn.textContent = '📋'; }, 1500); }
+                  }}
+                    id="copy-cmd-btn"
+                    style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #C53030', background: '#FFF', color: '#C53030', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                    📋
+                  </button>
+                </div>
               </div>
             )}
             {serverOnline === true && (

@@ -2,22 +2,22 @@
 export const CHANNELS = {
   youtube: {
     label: '블런트엣지',
-    handle: '@bluntedge',
+    handle: '@wjdcldbxnqj',
     url: 'https://www.youtube.com/@wjdcldbxnqj',
     icon: '▶️',
     color: '#FF0000',
   },
   x: {
-    label: '@blunt_edge',
-    handle: '@blunt_edge',
-    url: 'https://x.com/blunt_edge',
+    label: '@blunt_edge_',
+    handle: '@blunt_edge_',
+    url: 'https://x.com/blunt_edge_',
     icon: '𝕏',
     color: '#000000',
   },
   blog: {
-    label: 'onedo4u.com',
+    label: 'thebluntedge.com',
     handle: 'BluntEdge',
-    url: 'https://onedo4u.com/',
+    url: 'https://thebluntedge.com/',
     icon: '📝',
     color: '#21759B',
   },

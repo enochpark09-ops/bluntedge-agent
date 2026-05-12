@@ -52,6 +52,9 @@ export default function App() {
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [serverOnline, setServerOnline] = useState(null);
   const [publishChannels, setPublishChannels] = useState({ youtube: true, blog: true, x: false });
+  const [blogCategory, setBlogCategory] = useState('사설 해설');
+
+  const BLOG_CATEGORIES = ['사설 해설', '정치 분석', '경제 정책', '칼럼'];
   const inputRef = useRef(null);
 
   const [pipeStep, setPipeStep] = useState('idle');
@@ -180,6 +183,7 @@ export default function App() {
           publish_youtube: publishChannels.youtube,
           publish_blog: publishChannels.blog,
           publish_x: publishChannels.x,
+          blog_category: blogCategory,
         }),
       });
       const data = await res.json();
@@ -329,6 +333,27 @@ export default function App() {
               {publishChannels.x && (
                 <div style={{ marginTop: 8, fontSize: 10, color: '#888', textAlign: 'center' }}>
                   𝕏 스레드는 준비 중입니다. 향후 업데이트 예정.
+                </div>
+              )}
+
+              {/* 블로그 카테고리 선택 */}
+              {publishChannels.blog && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 6 }}>📂 블로그 카테고리</div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {BLOG_CATEGORIES.map(cat => (
+                      <button key={cat} onClick={() => setBlogCategory(cat)}
+                        style={{
+                          flex: 1, padding: '7px 4px', borderRadius: 7, fontSize: 11, fontWeight: 600,
+                          cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.2s',
+                          background: blogCategory === cat ? '#C5303015' : '#FAFAF8',
+                          border: blogCategory === cat ? '1.5px solid #C53030' : '1px solid #E0DDD6',
+                          color: blogCategory === cat ? '#C53030' : '#999',
+                        }}>
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

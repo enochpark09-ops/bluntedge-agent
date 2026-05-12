@@ -332,7 +332,7 @@ export default function App() {
               </div>
               {publishChannels.x && (
                 <div style={{ marginTop: 8, fontSize: 10, color: '#888', textAlign: 'center' }}>
-                  𝕏 스레드는 준비 중입니다. 향후 업데이트 예정.
+                  𝕏 텍스트 전용 스레드 (URL 미포함 시 건당 ~21원)
                 </div>
               )}
 

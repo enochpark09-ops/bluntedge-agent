@@ -51,7 +51,7 @@ export default function App() {
   const [context, setContext] = useState('');
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [serverOnline, setServerOnline] = useState(null);
-  const [publishChannels, setPublishChannels] = useState({ youtube: true, blog: true, x: false });
+  const [publishChannels, setPublishChannels] = useState({ youtube: true, blog: true, x: true });
   const [blogCategory, setBlogCategory] = useState('사설 해설');
 
   const BLOG_CATEGORIES = ['사설 해설', '정치 분석', '경제 정책', '칼럼'];

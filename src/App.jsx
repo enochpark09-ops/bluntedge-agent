@@ -67,6 +67,24 @@ export default function App() {
   const [thumbCandidates, setThumbCandidates] = useState([]);
   const [videoData, setVideoData] = useState(null);
 
+  // ── 탭 & 롱폼 상태 ──
+  const [activeTab, setActiveTab] = useState('shorts'); // 'shorts' | 'longform'
+  const [lfTitle, setLfTitle] = useState('');
+  const [lfIntro, setLfIntro] = useState('');
+  const [lfClips, setLfClips] = useState([
+    { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: true },
+    { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: false },
+    { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: false },
+    { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: false },
+    { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: false },
+  ]);
+  const [lfPublish, setLfPublish] = useState({ youtube: true, blog: true, x: true });
+  const [lfBlogCategory, setLfBlogCategory] = useState('정치 분석');
+  const [lfStep, setLfStep] = useState('idle'); // idle | rendering | done | error
+  const [lfMsg, setLfMsg] = useState('');
+  const [lfResult, setLfResult] = useState(null);
+  const [lfError, setLfError] = useState('');
+
   useEffect(() => { inputRef.current?.focus(); }, []);
   useEffect(() => {
     fetch(`${PIPELINE_URL}/api/health`).then(r => r.json())
@@ -213,6 +231,81 @@ export default function App() {
     setSelectedPaper(null);
   };
 
+  // ── 롱폼 헬퍼 함수들 ──
+  const updateClip = (index, field, value) => {
+    setLfClips(prev => prev.map((c, i) => i === index ? { ...c, [field]: value } : c));
+  };
+
+  const toggleClipExpand = (index) => {
+    setLfClips(prev => prev.map((c, i) => i === index ? { ...c, expanded: !c.expanded } : c));
+  };
+
+  const handleVideoUpload = (index, file) => {
+    if (file && file.type.startsWith('video/')) {
+      updateClip(index, 'videoFile', file);
+      updateClip(index, 'videoName', file.name);
+    }
+  };
+
+  const lfFilledClips = lfClips.filter(c => c.speaker.trim() || c.commentary.trim());
+  const lfHasAnyChannel = lfPublish.youtube || lfPublish.blog || lfPublish.x;
+  const lfReady = lfTitle.trim() && lfFilledClips.length > 0 && lfFilledClips.every(c => c.videoFile) && lfHasAnyChannel && serverOnline;
+
+  const startLongformGeneration = async () => {
+    if (!lfReady) return;
+    setLfStep('rendering');
+    setLfMsg('롱폼 영상 합성 준비 중...');
+    setLfResult(null);
+    setLfError('');
+
+    const formData = new FormData();
+    formData.append('title', lfTitle.trim());
+    formData.append('intro_text', lfIntro.trim());
+    formData.append('publish_youtube', lfPublish.youtube ? 'true' : 'false');
+    formData.append('publish_blog', lfPublish.blog ? 'true' : 'false');
+    formData.append('publish_x', lfPublish.x ? 'true' : 'false');
+    formData.append('blog_category', lfBlogCategory);
+
+    lfFilledClips.forEach((clip, idx) => {
+      const i = idx + 1;
+      formData.append(`clip${i}_speaker`, clip.speaker);
+      formData.append(`clip${i}_subtitle`, clip.subtitle);
+      formData.append(`clip${i}_commentary`, clip.commentary);
+      formData.append(`clip${i}_video`, clip.videoFile);
+    });
+
+    try {
+      const res = await fetch(`${PIPELINE_URL}/api/longform`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      pollJob(data.job_id,
+        (j) => setLfMsg(j.step || ''),
+        (j) => { setLfStep('done'); setLfResult(j.result); },
+        (err) => { setLfStep('error'); setLfError(err); },
+      );
+    } catch (err) { setLfStep('error'); setLfError(err.message); }
+  };
+
+  const resetLongform = () => {
+    setLfStep('idle');
+    setLfMsg('');
+    setLfResult(null);
+    setLfError('');
+    setLfTitle('');
+    setLfIntro('');
+    setLfClips([
+      { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: true },
+      { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: false },
+      { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: false },
+      { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: false },
+      { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: false },
+    ]);
+  };
+
   return (
     <div style={{ minHeight: '100vh', background: '#F0EDEA', fontFamily: "'Pretendard','Noto Sans KR',-apple-system,sans-serif" }}>
       <style>{`
@@ -241,6 +334,30 @@ export default function App() {
             ))}
           </div>
         </div>
+
+        {/* ── 탭 전환 ── */}
+        <div style={{ display: 'flex', gap: 0, marginBottom: 16, background: '#E5E2DB', borderRadius: 12, padding: 3 }}>
+          {[
+            { key: 'shorts', icon: '📱', label: '쇼츠' },
+            { key: 'longform', icon: '🎬', label: '롱폼' },
+          ].map(tab => (
+            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+              style={{
+                flex: 1, padding: '10px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                fontFamily: 'inherit', fontSize: 13, fontWeight: 700, transition: 'all 0.2s',
+                background: activeTab === tab.key ? '#FFF' : 'transparent',
+                color: activeTab === tab.key ? '#C53030' : '#888',
+                boxShadow: activeTab === tab.key ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
+              }}>
+              {tab.icon} {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ══════════════════════════════════════════════
+            쇼츠 탭
+        ══════════════════════════════════════════════ */}
+        {activeTab === 'shorts' && <>
 
         {/* ══════════ 입력 영역 (idle 상태) ══════════ */}
         {pipeStep === 'idle' && (
@@ -544,6 +661,275 @@ export default function App() {
           </div>
         )}
 
+        {/* ══════════ 쇼츠 탭 끝 ══════════ */}
+        </>}
+
+        {/* ══════════════════════════════════════════════
+            롱폼 탭
+        ══════════════════════════════════════════════ */}
+        {activeTab === 'longform' && <>
+
+          {/* ── 롱폼: 입력 (idle) ── */}
+          {lfStep === 'idle' && (
+            <div style={{ animation: 'fadeIn 0.3s ease' }}>
+
+              {/* 모드 표시 */}
+              <div style={{ textAlign: 'center', marginBottom: 12 }}>
+                <span style={{
+                  display: 'inline-block', padding: '4px 16px', borderRadius: 20,
+                  background: '#C5303015', border: '1px solid #C5303030',
+                  fontSize: 12, fontWeight: 700, color: '#C53030',
+                }}>
+                  🎬 롱폼 · 이번 주 핵심 발언
+                </span>
+              </div>
+
+              {/* 영상 제목 + 인트로 */}
+              <div style={{ background: '#FFF', borderRadius: 14, padding: '20px', border: '1px solid #E0DDD6', marginBottom: 12 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 8, display: 'block' }}>
+                  🎬 영상 제목
+                </label>
+                <input value={lfTitle} onChange={e => setLfTitle(e.target.value)}
+                  placeholder="예: 이번 주 핵심 발언 5선"
+                  style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid #E0DDD6', fontSize: 14, fontFamily: 'inherit', background: '#FAFAF8', color: '#1A1A1A' }}
+                  onFocus={e => e.target.style.borderColor = '#C53030'} onBlur={e => e.target.style.borderColor = '#E0DDD6'}
+                />
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#555', marginTop: 14, marginBottom: 8, display: 'block' }}>
+                  📎 인트로 멘트 <span style={{ fontWeight: 400, color: '#AAA' }}>(선택)</span>
+                </label>
+                <input value={lfIntro} onChange={e => setLfIntro(e.target.value)}
+                  placeholder="예: 이번 주 가장 뜨거웠던 발언 5가지, 팩트로 벱니다."
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #E0DDD6', fontSize: 13, fontFamily: 'inherit', background: '#FAFAF8', color: '#1A1A1A' }}
+                  onFocus={e => e.target.style.borderColor = '#C53030'} onBlur={e => e.target.style.borderColor = '#E0DDD6'}
+                />
+              </div>
+
+              {/* 클립 1~5 아코디언 */}
+              {lfClips.map((clip, idx) => {
+                const filled = clip.speaker.trim() || clip.commentary.trim() || clip.videoFile;
+                return (
+                  <div key={idx} style={{
+                    background: '#FFF', borderRadius: 14, border: filled ? '2px solid #C5303050' : '1px solid #E0DDD6',
+                    marginBottom: 8, overflow: 'hidden', transition: 'all 0.2s',
+                  }}>
+                    {/* 아코디언 헤더 */}
+                    <button onClick={() => toggleClipExpand(idx)}
+                      style={{
+                        width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '14px 16px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit',
+                      }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{
+                          width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 12, fontWeight: 800,
+                          background: filled ? '#C53030' : '#E0DDD6', color: filled ? '#FFF' : '#999',
+                        }}>{idx + 1}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: clip.speaker ? '#1A1A1A' : '#AAA' }}>
+                          {clip.speaker || `클립 ${idx + 1}`}
+                        </span>
+                        {clip.videoFile && <span style={{ fontSize: 10, color: '#2D8544', fontWeight: 600 }}>✓ 영상</span>}
+                      </div>
+                      <span style={{ fontSize: 14, color: '#AAA', transition: 'transform 0.2s', transform: clip.expanded ? 'rotate(180deg)' : 'rotate(0)' }}>▼</span>
+                    </button>
+
+                    {/* 아코디언 내용 */}
+                    {clip.expanded && (
+                      <div style={{ padding: '0 16px 16px', animation: 'fadeIn 0.2s ease' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 4, display: 'block' }}>발언자 이름</label>
+                            <input value={clip.speaker} onChange={e => updateClip(idx, 'speaker', e.target.value)}
+                              placeholder="예: 이재명 대통령"
+                              style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #E0DDD6', fontSize: 12, fontFamily: 'inherit', background: '#FAFAF8' }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 4, display: 'block' }}>발언 자막</label>
+                            <input value={clip.subtitle} onChange={e => updateClip(idx, 'subtitle', e.target.value)}
+                              placeholder="영상 위에 표시될 자막"
+                              style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #E0DDD6', fontSize: 12, fontFamily: 'inherit', background: '#FAFAF8' }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* 영상 업로드 */}
+                        <label style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 4, display: 'block' }}>발언 영상 (mp4)</label>
+                        <div style={{
+                          padding: '12px', borderRadius: 10, border: '1.5px dashed #E0DDD6',
+                          background: clip.videoFile ? '#F0FFF4' : '#FAFAF8',
+                          textAlign: 'center', cursor: 'pointer', marginBottom: 10,
+                          transition: 'all 0.2s',
+                        }}
+                          onClick={() => document.getElementById(`lf-video-${idx}`).click()}
+                        >
+                          <input id={`lf-video-${idx}`} type="file" accept="video/mp4,video/*" style={{ display: 'none' }}
+                            onChange={e => e.target.files[0] && handleVideoUpload(idx, e.target.files[0])}
+                          />
+                          {clip.videoFile ? (
+                            <span style={{ fontSize: 12, color: '#2D8544', fontWeight: 600 }}>🎥 {clip.videoName}</span>
+                          ) : (
+                            <span style={{ fontSize: 12, color: '#AAA' }}>📁 클릭하여 영상 업로드</span>
+                          )}
+                        </div>
+
+                        {/* 해설 코멘트 */}
+                        <label style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 4, display: 'block' }}>해설 코멘트 (TTS 나레이션)</label>
+                        <textarea value={clip.commentary} onChange={e => updateClip(idx, 'commentary', e.target.value)}
+                          placeholder="BluntEdge가 읽을 나레이션 대본을 입력하세요..."
+                          rows={3}
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #E0DDD6', fontSize: 12, fontFamily: 'inherit', background: '#FAFAF8', resize: 'vertical', lineHeight: 1.7 }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* 발행 채널 선택 */}
+              <div style={{ background: '#FFF', borderRadius: 14, padding: '16px', border: '1px solid #E0DDD6', marginBottom: 12, marginTop: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 10 }}>📢 발행 채널 선택</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {PUBLISH_CHANNELS.map(ch => (
+                    <label key={ch.key} style={{
+                      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      padding: '10px 8px', borderRadius: 10, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                      background: lfPublish[ch.key] ? '#C5303012' : '#FAFAF8',
+                      border: lfPublish[ch.key] ? '2px solid #C53030' : '1.5px solid #E0DDD6',
+                      color: lfPublish[ch.key] ? '#C53030' : '#AAA',
+                      transition: 'all 0.2s',
+                    }}>
+                      <input type="checkbox" checked={lfPublish[ch.key]}
+                        onChange={e => setLfPublish(p => ({ ...p, [ch.key]: e.target.checked }))}
+                        style={{ display: 'none' }} />
+                      <span style={{ fontSize: 16 }}>{ch.icon}</span>
+                      <span>{ch.label}</span>
+                      {lfPublish[ch.key] && <span style={{ fontSize: 14 }}>✓</span>}
+                    </label>
+                  ))}
+                </div>
+                {lfPublish.blog && (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 6 }}>📂 블로그 카테고리</div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {BLOG_CATEGORIES.map(cat => (
+                        <button key={cat} onClick={() => setLfBlogCategory(cat)}
+                          style={{
+                            flex: 1, padding: '7px 4px', borderRadius: 7, fontSize: 11, fontWeight: 600,
+                            cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.2s',
+                            background: lfBlogCategory === cat ? '#C5303015' : '#FAFAF8',
+                            border: lfBlogCategory === cat ? '1.5px solid #C53030' : '1px solid #E0DDD6',
+                            color: lfBlogCategory === cat ? '#C53030' : '#999',
+                          }}>
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 생성 버튼 */}
+              <button onClick={startLongformGeneration}
+                disabled={!lfReady}
+                style={{
+                  width: '100%', padding: '14px', borderRadius: 12, border: 'none',
+                  background: lfReady ? 'linear-gradient(135deg, #C53030, #C53030CC)' : '#DDD',
+                  color: lfReady ? '#FFF' : '#999',
+                  fontSize: 15, fontWeight: 800, cursor: lfReady ? 'pointer' : 'default',
+                  fontFamily: 'inherit', transition: 'all 0.2s', letterSpacing: -0.3,
+                }}>
+                🎬 롱폼 영상 생성 ({lfFilledClips.length}클립)
+              </button>
+
+              {/* 클립 요약 */}
+              {lfFilledClips.length > 0 && (
+                <div style={{ marginTop: 8, fontSize: 11, color: '#888', textAlign: 'center' }}>
+                  {lfFilledClips.map((c, i) => c.speaker).filter(Boolean).join(' → ')} · 예상 {lfFilledClips.length * 1}~{lfFilledClips.length * 1.5}분
+                </div>
+              )}
+
+              {!lfReady && lfFilledClips.length > 0 && !lfFilledClips.every(c => c.videoFile) && (
+                <div style={{ marginTop: 6, fontSize: 11, color: '#C53030', textAlign: 'center' }}>
+                  ⚠️ 모든 클립에 영상 파일을 업로드해주세요
+                </div>
+              )}
+
+              {/* 서버 상태 */}
+              {serverOnline === false && (
+                <div style={{ marginTop: 8, padding: '12px', borderRadius: 10, background: '#FFF5F5', border: '1px solid #FED7D7', fontSize: 12, color: '#C53030', lineHeight: 1.6 }}>
+                  ⚠️ 로컬 서버가 꺼져 있습니다.
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                    <code style={{ flex: 1, background: '#1A1A1A', color: '#00FF41', padding: '10px 12px', borderRadius: 8, fontSize: 11, fontFamily: 'monospace', display: 'block', lineHeight: 1.5 }}>
+                      cd C:\bluntedge-pipeline-v1.0\bluntedge-pipeline && python server.py
+                    </code>
+                  </div>
+                </div>
+              )}
+              {serverOnline === true && (
+                <div style={{ marginTop: 6, fontSize: 10, color: '#2D8544', textAlign: 'center' }}>● 파이프라인 서버 연결됨</div>
+              )}
+            </div>
+          )}
+
+          {/* ── 롱폼: 진행 중 ── */}
+          {lfStep === 'rendering' && (
+            <div style={{ textAlign: 'center', padding: '50px 0', animation: 'fadeIn 0.3s ease' }}>
+              <div style={{ fontSize: 42, marginBottom: 14, animation: 'pulse 1.5s infinite' }}>🎬</div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: '#555' }}>{lfMsg}<LoadingDots /></div>
+              <div style={{ fontSize: 11, color: '#AAA', marginTop: 8 }}>롱폼 합성 모드 · {lfFilledClips.length}클립</div>
+            </div>
+          )}
+
+          {/* ── 롱폼: 완료 ── */}
+          {lfStep === 'done' && lfResult && (
+            <div style={{ background: '#F0FFF4', border: '1px solid #C6F6D5', borderRadius: 14, padding: '20px', marginBottom: 16, animation: 'fadeIn 0.4s ease' }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: '#276749', marginBottom: 14 }}>✅ 롱폼 콘텐츠 발행 완료!</div>
+              <div style={{ fontSize: 13, color: '#2D2D2D', lineHeight: 2 }}>
+                <p style={{ margin: '0 0 6px' }}><strong>제목:</strong> {lfResult.title}</p>
+                <p style={{ margin: '0 0 6px' }}><strong>길이:</strong> {(lfResult.duration / 60).toFixed(1)}분 · {lfResult.clip_count}클립</p>
+                {lfResult.video_url && (
+                  <p style={{ margin: '0 0 6px' }}>
+                    <strong>▶️ YouTube:</strong>{' '}
+                    <a href={lfResult.video_url} target="_blank" rel="noopener noreferrer" style={{ color: '#C53030', fontWeight: 600 }}>{lfResult.video_url}</a>
+                  </p>
+                )}
+                {lfResult.blog_url && (
+                  <p style={{ margin: '0 0 6px' }}>
+                    <strong>📝 블로그:</strong>{' '}
+                    <a href={lfResult.blog_url} target="_blank" rel="noopener noreferrer" style={{ color: '#C53030', fontWeight: 600 }}>{lfResult.blog_url}</a>
+                  </p>
+                )}
+                {lfResult.x_url && (
+                  <p style={{ margin: '0 0 6px' }}>
+                    <strong>𝕏 X:</strong>{' '}
+                    <a href={lfResult.x_url} target="_blank" rel="noopener noreferrer" style={{ color: '#C53030', fontWeight: 600 }}>{lfResult.x_url}</a>
+                  </p>
+                )}
+                <p style={{ margin: '0' }}>
+                  <strong>출력:</strong>{' '}
+                  <code style={{ background: '#E2E8F0', padding: '2px 8px', borderRadius: 4, fontSize: 11 }}>{lfResult.output_dir}</code>
+                </p>
+              </div>
+              <button onClick={resetLongform}
+                style={{ marginTop: 14, padding: '10px 20px', borderRadius: 8, border: '1px solid #C6F6D5', background: '#FFF', color: '#276749', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                🔄 새로운 롱폼 만들기
+              </button>
+            </div>
+          )}
+
+          {/* ── 롱폼: 에러 ── */}
+          {lfStep === 'error' && (
+            <div style={{ background: '#FFF5F5', border: '1px solid #FED7D7', borderRadius: 14, padding: '16px', marginBottom: 16, fontSize: 13, color: '#C53030' }}>
+              ⚠️ 오류: {lfError}
+              <button onClick={() => { setLfStep('idle'); setLfError(''); }}
+                style={{ display: 'block', marginTop: 10, padding: '8px 16px', borderRadius: 6, border: '1px solid #C53030', background: 'transparent', color: '#C53030', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                다시 시도
+              </button>
+            </div>
+          )}
+
+        </>}
+
         {/* ── Bible ── */}
         <details style={{ marginTop: 20 }}>
           <summary style={{ fontSize: 12, fontWeight: 600, color: '#888', cursor: 'pointer', padding: '8px 0' }}>📖 BluntEdge 바이블 요약 보기</summary>
@@ -562,7 +948,7 @@ export default function App() {
               <a key={key} href={ch.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#888', textDecoration: 'none' }}>{ch.icon} {ch.label}</a>
             ))}
           </div>
-          <div style={{ fontSize: 11, color: '#AAA' }}>BluntEdge Content Agent v3.0 · Powered by Claude</div>
+          <div style={{ fontSize: 11, color: '#AAA' }}>BluntEdge Content Agent v3.1 · Powered by Claude</div>
         </div>
       </div>
     </div>

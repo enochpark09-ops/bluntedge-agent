@@ -87,8 +87,10 @@ export default function App() {
 
   useEffect(() => { inputRef.current?.focus(); }, []);
   useEffect(() => {
-    fetch(`${PIPELINE_URL}/api/health`).then(r => r.json())
-      .then(() => setServerOnline(true)).catch(() => setServerOnline(false));
+    fetch(`${PIPELINE_URL}/api/health`)
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(() => setServerOnline(true))
+      .catch(() => setServerOnline(false));
   }, []);
 
   const isEditorial = !!selectedPaper;

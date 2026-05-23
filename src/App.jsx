@@ -936,9 +936,10 @@ export default function App() {
         <details style={{ marginTop: 20 }}>
           <summary style={{ fontSize: 12, fontWeight: 600, color: '#888', cursor: 'pointer', padding: '8px 0' }}>📖 BluntEdge 바이블 요약 보기</summary>
           <div style={{ background: '#FFF', borderRadius: 10, padding: '14px', border: '1px solid #E5E2DB', marginTop: 8, fontSize: 12, color: '#555', lineHeight: 1.7 }}>
-            <p><strong>포지션:</strong> 중도 실용주의 · 진영 논리 거부</p>
+            <p><strong>포지션:</strong> 중도 진보 · 합리적 진보 관점 · 팩트 기반 판단</p>
             <p><strong>톤:</strong> 날카로운 논객 · 직설 + 풍자 · 팩트 퍼스트</p>
-            <p><strong>금기:</strong> 양비론, 인신공격, 감정선동, 미확인정보, 어그로</p>
+            <p><strong>언론:</strong> 보수 언론(조·중·동) 프레이밍 비판 · 진보 언론도 팩트 오류 시 지적</p>
+            <p><strong>금기:</strong> 양비론, 인신공격, 감정선동, 미확인정보, 보수 언론 논조 동조</p>
             <p><strong>구조:</strong> 통념 제시 → 팩트로 뒤집기 → 한 줄 결론</p>
           </div>
         </details>

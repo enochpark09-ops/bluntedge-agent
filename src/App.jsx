@@ -4,14 +4,14 @@ import { CHANNELS } from './config/bible.js';
 const PIPELINE_URL = 'http://localhost:5050';
 
 const NEWSPAPERS = [
-  { id: 'chosun', name: '조선일보', url: 'https://www.chosun.com/opinion/editorial/', color: '#003876' },
-  { id: 'joongang', name: '중앙일보', url: 'https://www.joongang.co.kr/opinion/editorial', color: '#E3000F' },
-  { id: 'donga', name: '동아일보', url: 'https://www.donga.com/news/Opinion/Editorial', color: '#003DA5' },
-  { id: 'hankyoreh', name: '한겨레', url: 'https://www.hani.co.kr/arti/opinion/editorial', color: '#00A651' },
-  { id: 'khan', name: '경향신문', url: 'https://www.khan.co.kr/opinion/editorial', color: '#FF6600' },
-  { id: 'hankook', name: '한국일보', url: 'https://www.hankookilbo.com/News/Opinion/Editorial', color: '#0066CC' },
-  { id: 'mk', name: '매일경제', url: 'https://www.mk.co.kr/opinion/editorial', color: '#1A1A1A' },
-  { id: 'hankyung', name: '한국경제', url: 'https://www.hankyung.com/opinion/editorial', color: '#C53030' },
+  { id: 'chosun', name: '조선일보', url: 'https://www.chosun.com/opinion/editorial/', color: '#003876', stance: 'conservative' },
+  { id: 'joongang', name: '중앙일보', url: 'https://www.joongang.co.kr/opinion/editorial', color: '#E3000F', stance: 'conservative' },
+  { id: 'donga', name: '동아일보', url: 'https://www.donga.com/news/Opinion/Editorial', color: '#003DA5', stance: 'conservative' },
+  { id: 'hankyoreh', name: '한겨레', url: 'https://www.hani.co.kr/arti/opinion/editorial', color: '#00A651', stance: 'progressive' },
+  { id: 'khan', name: '경향신문', url: 'https://www.khan.co.kr/opinion/editorial', color: '#FF6600', stance: 'progressive' },
+  { id: 'hankook', name: '한국일보', url: 'https://www.hankookilbo.com/News/Opinion/Editorial', color: '#0066CC', stance: 'neutral' },
+  { id: 'mk', name: '매일경제', url: 'https://www.mk.co.kr/opinion/editorial', color: '#1A1A1A', stance: 'conservative' },
+  { id: 'hankyung', name: '한국경제', url: 'https://www.hankyung.com/opinion/editorial', color: '#C53030', stance: 'conservative' },
 ];
 
 const PUBLISH_CHANNELS = [
@@ -109,9 +109,27 @@ export default function App() {
     const finalTopic = isEditorial
       ? `[${selectedPaper.name} 사설 분석] ${topic}`
       : topic;
-    const finalContext = isEditorial
-      ? `[출처: ${selectedPaper.name} 사설]\n${context}\n\n[지시] 이 사설을 BluntEdge 관점에서 분석하는 YouTube 숏폼 스크립트를 만들어줘.`
-      : context;
+
+    // 보수 언론 선택 시 비판 논조 강제 적용
+    const isConservative = selectedPaper?.stance === 'conservative';
+    const editorialDirective = isConservative
+      ? `[출처: ${selectedPaper.name} 사설]
+${context}
+
+[핵심 지시 — 반드시 따를 것]
+${selectedPaper.name}은 보수 언론이다. 이 사설을 BluntEdge의 중도 진보 관점에서 비판적으로 해체하라.
+- 이 사설이 설정한 프레임(논조, 전제, 결론 유도)을 찾아내고, 그 프레이밍의 의도를 폭로하라.
+- 사설이 주장하는 결론에 동조하지 마라. 같은 팩트라도 BluntEdge는 반대 해석을 내려야 한다.
+- 사설이 빠뜨린 팩트, 축소한 맥락, 과장한 부분을 짚어라.
+- "이 사설의 진짜 의도는 ~다"라는 식으로 숨겨진 목적을 드러내라.
+- 어조: 냉소적이고 날카롭게. 사설의 논리를 조목조목 반박하라.
+- 절대로 이 사설의 논조에 동의하거나 수긍하는 문장을 쓰지 마라.`
+      : `[출처: ${selectedPaper.name} 사설]
+${context}
+
+[지시] 이 사설을 BluntEdge 관점에서 분석하는 스크립트를 만들어줘.`;
+
+    const finalContext = isEditorial ? editorialDirective : context;
 
     try {
       const res = await fetch(`${PIPELINE_URL}/api/script`, {
@@ -374,7 +392,11 @@ export default function App() {
                 fontSize: 12, fontWeight: 700,
                 color: isEditorial ? accentColor : '#2D2D2D',
               }}>
-                {isEditorial ? `📰 신문사설 해설자 · ${selectedPaper.name}` : '🔪 BluntEdge 자유 분석'}
+                {isEditorial
+                  ? (selectedPaper?.stance === 'conservative'
+                    ? `🔪 ${selectedPaper.name} 사설 비판`
+                    : `📰 ${selectedPaper.name} 사설 해설`)
+                  : '🔪 BluntEdge 자유 분석'}
               </span>
             </div>
 
@@ -489,7 +511,9 @@ export default function App() {
                 fontFamily: 'inherit', transition: 'all 0.2s',
                 letterSpacing: -0.3,
               }}>
-              {isEditorial ? '📰 사설 해설 콘텐츠 생성' : '🔪 BluntEdge 콘텐츠 생성'}
+              {isEditorial
+                ? (selectedPaper?.stance === 'conservative' ? '🔪 사설 비판 콘텐츠 생성' : '📰 사설 해설 콘텐츠 생성')
+                : '🔪 BluntEdge 콘텐츠 생성'}
             </button>
 
             {/* 서버 상태 */}

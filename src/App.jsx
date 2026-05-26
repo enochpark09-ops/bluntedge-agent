@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { CHANNELS } from './config/bible.js';
+import { generateContent } from './services/api.js';
 
 const PIPELINE_URL = 'http://localhost:5050';
 
@@ -98,7 +99,7 @@ export default function App() {
   const modeName = isEditorial ? '신문사설 해설자' : 'BluntEdge';
   const hasAnyChannel = publishChannels.youtube || publishChannels.blog || publishChannels.x;
 
-  // Step 1: 스크립트 생성
+  // Step 1: 스크립트 생성 (브라우저 → Claude API 직접 호출, 로컬 서버 불필요)
   const startScriptGeneration = async () => {
     if (!topic.trim()) return;
     setPipeStep('scripting');
@@ -132,25 +133,22 @@ ${context}
     const finalContext = isEditorial ? editorialDirective : context;
 
     try {
-      const res = await fetch(`${PIPELINE_URL}/api/script`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: finalTopic, context: finalContext }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      const result = await generateContent('youtube', finalTopic, finalContext);
 
-      pollJob(data.job_id,
-        (j) => setPipeMsg(j.step || ''),
-        (j) => {
-          const r = j.result;
-          setEditTitle(r.title);
-          setEditScript(r.script);
-          setEditDesc(r.description);
-          setPipeStep('review');
-        },
-        (err) => { setPipeStep('error'); setPipeError(err); },
-      );
+      // 제목 추출
+      let title = finalTopic;
+      const titleMatch = result.match(/(?:제목|타이틀|##\s*)[:：]?\s*(.+)/m);
+      if (titleMatch) title = titleMatch[1].replace(/[*#"]/g, '').trim();
+
+      // 3줄 요약 추출
+      let description = `${title} — BluntEdge 분석`;
+      const descMatch = result.match(/(?:요약|3줄\s*요약|설명)[:：]?\s*([\s\S]*?)(?:\n\n|$)/i);
+      if (descMatch) description = descMatch[1].trim();
+
+      setEditTitle(title);
+      setEditScript(result);
+      setEditDesc(description);
+      setPipeStep('review');
     } catch (err) { setPipeStep('error'); setPipeError(err.message); }
   };
 

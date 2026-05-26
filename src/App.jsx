@@ -107,14 +107,15 @@ export default function App() {
     setPipeResult(null);
     setPipeError('');
 
-    const finalTopic = isEditorial
-      ? `[${selectedPaper.name} 사설 분석] ${topic}`
-      : topic;
+    let finalTopic = topic;
+    let finalContext = context;
 
-    // 보수 언론 선택 시 비판 논조 강제 적용
-    const isConservative = selectedPaper?.stance === 'conservative';
-    const editorialDirective = isConservative
-      ? `[출처: ${selectedPaper.name} 사설]
+    if (isEditorial && selectedPaper) {
+      finalTopic = `[${selectedPaper.name} 사설 분석] ${topic}`;
+
+      const isConservative = selectedPaper.stance === 'conservative';
+      finalContext = isConservative
+        ? `[출처: ${selectedPaper.name} 사설]
 ${context}
 
 [핵심 지시 — 반드시 따를 것]
@@ -125,12 +126,11 @@ ${selectedPaper.name}은 보수 언론이다. 이 사설을 BluntEdge의 중도 
 - "이 사설의 진짜 의도는 ~다"라는 식으로 숨겨진 목적을 드러내라.
 - 어조: 냉소적이고 날카롭게. 사설의 논리를 조목조목 반박하라.
 - 절대로 이 사설의 논조에 동의하거나 수긍하는 문장을 쓰지 마라.`
-      : `[출처: ${selectedPaper.name} 사설]
+        : `[출처: ${selectedPaper.name} 사설]
 ${context}
 
 [지시] 이 사설을 BluntEdge 관점에서 분석하는 스크립트를 만들어줘.`;
-
-    const finalContext = isEditorial ? editorialDirective : context;
+    }
 
     try {
       const result = await generateContent('youtube', finalTopic, finalContext);

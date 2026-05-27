@@ -68,6 +68,15 @@ export default function App() {
   const [thumbCandidates, setThumbCandidates] = useState([]);
   const [videoData, setVideoData] = useState(null);
 
+  // ── 배경 이미지 상태 ──
+  const [bgImage1, setBgImage1] = useState(null);
+  const [bgImage2, setBgImage2] = useState(null);
+  const [bgImage1Name, setBgImage1Name] = useState('');
+  const [bgImage2Name, setBgImage2Name] = useState('');
+
+  // ── 썸네일 편집 상태 ──
+  const [editableThumbTexts, setEditableThumbTexts] = useState([]);
+
   // ── 탭 & 롱폼 상태 ──
   const [activeTab, setActiveTab] = useState('shorts'); // 'shorts' | 'longform'
   const [lfTitle, setLfTitle] = useState('');
@@ -157,21 +166,21 @@ ${context}
     setPipeStep('rendering');
     setPipeMsg('음성 생성 중...');
 
-    const vd = {
-      title: editTitle.trim(),
-      script: editScript.trim(),
-      description: editDesc.trim(),
-    };
-    if (isEditorial) {
-      vd.newspaper_name = selectedPaper.name;
-      vd.newspaper_color = selectedPaper.color;
+    const formData = new FormData();
+    formData.append('title', editTitle.trim());
+    formData.append('script', editScript.trim());
+    formData.append('description', editDesc.trim());
+    if (isEditorial && selectedPaper) {
+      formData.append('newspaper_name', selectedPaper.name);
+      formData.append('newspaper_color', selectedPaper.color);
     }
+    if (bgImage1) formData.append('bg_image_1', bgImage1);
+    if (bgImage2) formData.append('bg_image_2', bgImage2);
 
     try {
       const res = await fetch(`${PIPELINE_URL}/api/video`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(vd),
+        body: formData,
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -180,7 +189,9 @@ ${context}
         (j) => setPipeMsg(j.step || ''),
         (j) => {
           if (j.status === 'thumbnail_select' && j.result) {
-            setThumbCandidates(j.result.thumbnail_candidates || []);
+            const candidates = j.result.thumbnail_candidates || [];
+            setThumbCandidates(candidates);
+            setEditableThumbTexts([...candidates]);
             setVideoData({
               video_path: j.result.video_path,
               output_dir: j.result.output_dir,
@@ -239,7 +250,12 @@ ${context}
     setPipeResult(null);
     setPipeError('');
     setThumbCandidates([]);
+    setEditableThumbTexts([]);
     setVideoData(null);
+    setBgImage1(null);
+    setBgImage2(null);
+    setBgImage1Name('');
+    setBgImage2Name('');
   };
 
   const resetAll = () => {
@@ -562,6 +578,42 @@ ${context}
             <textarea value={editDesc} onChange={e => setEditDesc(e.target.value)} rows={4}
               style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #E0DDD6', fontSize: 13, fontFamily: 'inherit', lineHeight: 1.7, marginBottom: 14, resize: 'vertical' }} />
 
+            {/* 배경 이미지 업로드 */}
+            <label style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 8, display: 'block' }}>
+              🖼️ 배경 이미지 <span style={{ fontWeight: 400, color: '#AAA' }}>(선택 · 2장 업로드 시 전반부/후반부 배경)</span>
+            </label>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              {[
+                { file: bgImage1, name: bgImage1Name, setter: setBgImage1, nameSetter: setBgImage1Name, label: '전반부', id: 'bg-img-1' },
+                { file: bgImage2, name: bgImage2Name, setter: setBgImage2, nameSetter: setBgImage2Name, label: '후반부', id: 'bg-img-2' },
+              ].map(slot => (
+                <div key={slot.id} style={{ flex: 1 }}>
+                  <div
+                    onClick={() => document.getElementById(slot.id).click()}
+                    style={{
+                      padding: '14px 8px', borderRadius: 10,
+                      border: slot.file ? '2px solid #2D8544' : '1.5px dashed #E0DDD6',
+                      background: slot.file ? '#F0FFF4' : '#FAFAF8',
+                      textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s',
+                    }}>
+                    <input id={slot.id} type="file" accept="image/*" style={{ display: 'none' }}
+                      onChange={e => {
+                        const f = e.target.files[0];
+                        if (f) { slot.setter(f); slot.nameSetter(f.name); }
+                      }} />
+                    {slot.file ? (
+                      <div>
+                        <div style={{ fontSize: 11, color: '#2D8544', fontWeight: 600 }}>✓ {slot.label}</div>
+                        <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>{slot.name}</div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 11, color: '#AAA' }}>📁 {slot.label} 이미지</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
             {/* 선택된 채널 표시 */}
             <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
               {PUBLISH_CHANNELS.filter(ch => publishChannels[ch.key]).map(ch => (
@@ -603,7 +655,7 @@ ${context}
         {pipeStep === 'thumbnail' && thumbCandidates.length > 0 && (
           <div style={{ background: '#FFF', borderRadius: 14, padding: '20px', border: `2px solid ${accentColor}`, marginBottom: 16, animation: 'fadeIn 0.4s ease' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: accentColor, marginBottom: 6 }}>🖼️ 썸네일 멘트 선택</div>
-            <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>영상 타이틀 카드에 표시될 문구를 선택하세요.</div>
+            <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>문구를 직접 수정한 뒤 선택하세요.</div>
             <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
               {PUBLISH_CHANNELS.filter(ch => publishChannels[ch.key]).map(ch => (
                 <span key={ch.key} style={{
@@ -613,19 +665,35 @@ ${context}
               ))}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {thumbCandidates.map((txt, i) => (
-                <button key={i} onClick={() => startUpload(txt)}
-                  style={{
-                    padding: '18px', borderRadius: 10,
-                    background: '#1A1A1A', border: '2px solid #333',
-                    color: '#FFF', fontSize: 20, fontWeight: 800,
-                    cursor: 'pointer', fontFamily: 'inherit',
-                    textAlign: 'center', transition: 'all 0.2s',
-                    letterSpacing: -0.5,
-                  }}
-                  onMouseEnter={e => { e.target.style.borderColor = accentColor; e.target.style.transform = 'scale(1.02)'; }}
-                  onMouseLeave={e => { e.target.style.borderColor = '#333'; e.target.style.transform = 'scale(1)'; }}
-                >{txt}</button>
+              {editableThumbTexts.map((txt, i) => (
+                <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+                  <input
+                    value={txt}
+                    onChange={e => {
+                      const updated = [...editableThumbTexts];
+                      updated[i] = e.target.value;
+                      setEditableThumbTexts(updated);
+                    }}
+                    style={{
+                      flex: 1, padding: '14px 16px', borderRadius: 10,
+                      background: '#1A1A1A', border: '2px solid #333',
+                      color: '#FFF', fontSize: 18, fontWeight: 800,
+                      fontFamily: 'inherit', textAlign: 'center',
+                      letterSpacing: -0.5,
+                    }}
+                    onFocus={e => e.target.style.borderColor = accentColor}
+                    onBlur={e => e.target.style.borderColor = '#333'}
+                  />
+                  <button onClick={() => startUpload(editableThumbTexts[i])}
+                    style={{
+                      padding: '14px 18px', borderRadius: 10, border: 'none',
+                      background: accentColor, color: '#FFF',
+                      fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                      fontFamily: 'inherit', whiteSpace: 'nowrap',
+                    }}>
+                    선택
+                  </button>
+                </div>
               ))}
             </div>
             <button onClick={resetAll}

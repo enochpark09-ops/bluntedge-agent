@@ -47,6 +47,220 @@ function pollJob(jobId, onUpdate, onDone, onError) {
   }, 1500);
 }
 
+// ══════════════════════════════════════════════
+//  카드뉴스 롱폼 탭 (기획안 생성 → 사진 첨부 → 영상 생성)
+// ══════════════════════════════════════════════
+function CardNewsTab({ serverOnline }) {
+  const [contentType, setContentType] = useState('weekend');
+  const [phase, setPhase] = useState('idle'); // idle | planning | review | rendering | done
+  const [step, setStep] = useState('');
+  const [plan, setPlan] = useState(null);
+  const [images, setImages] = useState({}); // { 1: {file, url} }
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+
+  const busy = phase === 'planning' || phase === 'rendering';
+  const RED = '#C53030', BORDER = '#E0DDD6', GRAY = '#888';
+
+  const pollCard = (jobId, onStep) => new Promise((resolve, reject) => {
+    const t = setInterval(async () => {
+      try {
+        const r = await fetch(`${PIPELINE_URL}/api/status/${jobId}`);
+        const j = await r.json();
+        if (onStep && j.step) onStep(j.step);
+        if (j.status === 'review' || j.status === 'done') { clearInterval(t); resolve(j); }
+        else if (j.status === 'error') { clearInterval(t); reject(new Error(j.error || '작업 실패')); }
+      } catch (e) { clearInterval(t); reject(new Error('서버 연결 끊김')); }
+    }, 2000);
+  });
+
+  const genPlan = async () => {
+    setError(''); setResult(null); setPlan(null); setImages({});
+    setPhase('planning'); setStep('실시간 뉴스 검색 + 기획안 생성 중...');
+    try {
+      const r = await fetch(`${PIPELINE_URL}/api/cardnews/plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content_type: contentType }),
+      });
+      const { job_id } = await r.json();
+      const j = await pollCard(job_id, setStep);
+      setPlan(j.result.plan);
+      setPhase('review');
+    } catch (e) { setError(String(e.message || e)); setPhase('idle'); }
+  };
+
+  const setField = (field, val) => setPlan(p => ({ ...p, [field]: val }));
+  const updateTopic = (i, field, val) =>
+    setPlan(p => ({ ...p, topics: p.topics.map((t, idx) => idx === i ? { ...t, [field]: val } : t) }));
+
+  const pickImage = (num, file) => {
+    if (!file) return;
+    setImages(im => ({ ...im, [num]: { file, url: URL.createObjectURL(file) } }));
+  };
+  const removeImage = (num) => setImages(im => { const c = { ...im }; delete c[num]; return c; });
+
+  const render = async (publishYoutube) => {
+    setError(''); setPhase('rendering'); setStep('영상 합성 시작...');
+    try {
+      const fd = new FormData();
+      fd.append('plan', JSON.stringify(plan));
+      fd.append('content_type', contentType);
+      fd.append('publish_youtube', publishYoutube ? 'true' : 'false');
+      (plan.topics || []).forEach((t, idx) => {
+        const num = idx + 1;
+        if (images[num]) fd.append(`image_${num}`, images[num].file);
+      });
+      const r = await fetch(`${PIPELINE_URL}/api/cardnews/render`, { method: 'POST', body: fd });
+      const { job_id } = await r.json();
+      const j = await pollCard(job_id, setStep);
+      setResult(j.result); setPhase('done');
+    } catch (e) { setError(String(e.message || e)); setPhase('review'); }
+  };
+
+  const input = {
+    width: '100%', boxSizing: 'border-box', padding: '9px 11px',
+    border: `1.5px solid ${BORDER}`, borderRadius: 8, fontSize: 13, marginTop: 4,
+    fontFamily: 'inherit', background: '#FAFAF8', resize: 'vertical', lineHeight: 1.6,
+  };
+  const btn = (bg, col, brd) => ({
+    padding: '10px 16px', borderRadius: 10, background: bg, color: col,
+    border: `1.5px solid ${brd || bg}`, fontWeight: 700, fontSize: 13, cursor: busy ? 'default' : 'pointer',
+    fontFamily: 'inherit',
+  });
+
+  return (
+    <div style={{ animation: 'fadeIn 0.3s ease' }}>
+      {/* 모드 표시 */}
+      <div style={{ textAlign: 'center', marginBottom: 12 }}>
+        <span style={{
+          display: 'inline-block', padding: '4px 16px', borderRadius: 20,
+          background: '#C5303015', border: '1px solid #C5303030',
+          fontSize: 12, fontWeight: 700, color: RED,
+        }}>
+          🃏 카드뉴스 · 놓치기 쉬운 뉴스 5
+        </span>
+      </div>
+
+      {/* 1) 발행 구간 + 기획안 생성 */}
+      <div style={{ background: '#FFF', borderRadius: 14, padding: '16px', border: `1px solid ${BORDER}`, marginBottom: 12 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 10 }}>🗓️ 발행 구간</div>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          {[['weekend', '이번 주 후반 (목~토)'], ['mid-week', '이번 주 전반 (월~수)']].map(([v, label]) => (
+            <button key={v} onClick={() => setContentType(v)} disabled={busy}
+              style={{ ...btn(contentType === v ? RED : '#FAFAF8', contentType === v ? '#fff' : '#666', contentType === v ? RED : BORDER), flex: 1 }}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <button onClick={genPlan} disabled={busy || serverOnline === false}
+          style={{ ...btn(RED, '#fff'), width: '100%', padding: '13px', fontSize: 14, fontWeight: 800, opacity: (busy || serverOnline === false) ? 0.6 : 1 }}>
+          {phase === 'planning' ? '🔍 생성 중...' : '🔍 기획안 생성 (실시간 뉴스)'}
+        </button>
+        {serverOnline === false && (
+          <div style={{ marginTop: 8, fontSize: 11, color: RED, textAlign: 'center' }}>
+            ⚠️ 로컬 서버가 꺼져 있습니다 (python server.py 실행 필요)
+          </div>
+        )}
+      </div>
+
+      {busy && (
+        <div style={{ textAlign: 'center', padding: '30px 0', animation: 'fadeIn 0.3s ease' }}>
+          <div style={{ fontSize: 40, marginBottom: 12, animation: 'pulse 1.5s infinite' }}>{phase === 'planning' ? '🔍' : '🎬'}</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#555' }}>{step}<LoadingDots /></div>
+        </div>
+      )}
+      {error && (
+        <div style={{ marginBottom: 12, padding: 14, background: '#FFF5F5', border: '1px solid #FED7D7', borderRadius: 12, fontSize: 13, color: RED, whiteSpace: 'pre-wrap' }}>
+          ⚠️ {error}
+        </div>
+      )}
+
+      {/* 2) 검토/편집 + 사진 첨부 */}
+      {plan && (phase === 'review' || phase === 'done') && (
+        <div>
+          <div style={{ background: '#FFF', borderRadius: 14, padding: '16px', border: `1px solid ${BORDER}`, marginBottom: 12 }}>
+            <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10, color: '#1A1A1A' }}>{plan.title}</div>
+            <label style={{ fontSize: 11, color: GRAY, fontWeight: 600 }}>오프닝 멘트</label>
+            <textarea rows={2} value={plan.opening_hook || ''} disabled={busy}
+              onChange={e => setField('opening_hook', e.target.value)} style={input} />
+          </div>
+
+          {(plan.topics || []).map((t, i) => {
+            const num = i + 1;
+            const img = images[num];
+            return (
+              <div key={i} style={{ background: '#FFF', padding: 14, border: `1px solid ${BORDER}`, borderRadius: 14, marginBottom: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <span style={{ fontSize: 22, fontWeight: 900, color: RED }}>{String(num).padStart(2, '0')}</span>
+                  <span style={{ fontSize: 11, color: GRAY }}>{(t.keywords || []).slice(0, 3).join(' · ')}</span>
+                </div>
+                <input value={t.headline || ''} disabled={busy}
+                  onChange={e => updateTopic(i, 'headline', e.target.value)} style={{ ...input, fontWeight: 700, fontSize: 14 }} placeholder="헤드라인" />
+                <textarea rows={3} value={t.summary || ''} disabled={busy}
+                  onChange={e => updateTopic(i, 'summary', e.target.value)} style={input} placeholder="요약" />
+                <textarea rows={2} value={t.bluntedge_take || ''} disabled={busy}
+                  onChange={e => updateTopic(i, 'bluntedge_take', e.target.value)} style={input} placeholder="BluntEdge 한마디" />
+
+                {/* 사진 첨부 */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+                  {img ? (
+                    <>
+                      <img src={img.url} alt="" style={{ width: 100, height: 56, objectFit: 'cover', borderRadius: 8, border: `1px solid ${BORDER}` }} />
+                      <button onClick={() => removeImage(num)} disabled={busy} style={btn('#FFF', RED, BORDER)}>사진 제거</button>
+                    </>
+                  ) : (
+                    <label style={{ ...btn('#FAFAF8', '#666', BORDER), display: 'inline-block' }}>
+                      🖼️ 사진 첨부
+                      <input type="file" accept="image/*" disabled={busy} style={{ display: 'none' }}
+                        onChange={e => pickImage(num, e.target.files[0])} />
+                    </label>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          <div style={{ background: '#FFF', borderRadius: 14, padding: '16px', border: `1px solid ${BORDER}`, marginBottom: 12 }}>
+            <label style={{ fontSize: 11, color: GRAY, fontWeight: 600 }}>마무리 멘트</label>
+            <textarea rows={2} value={plan.closing_message || ''} disabled={busy}
+              onChange={e => setField('closing_message', e.target.value)} style={input} />
+          </div>
+
+          {/* 3) 영상 생성 */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <button onClick={() => render(false)} disabled={busy} style={{ ...btn(RED, '#fff'), flex: 1, padding: '14px', fontSize: 14, fontWeight: 800 }}>
+              🎬 영상 생성
+            </button>
+            <button onClick={() => render(true)} disabled={busy} style={{ ...btn('#1A1A1A', '#fff'), flex: 1, padding: '14px', fontSize: 14, fontWeight: 800 }}>
+              🎬 생성 + 업로드
+            </button>
+          </div>
+          <button onClick={() => { setPlan(null); setImages({}); setPhase('idle'); }} disabled={busy}
+            style={{ ...btn('#FFF', '#777', BORDER), width: '100%' }}>
+            처음부터
+          </button>
+        </div>
+      )}
+
+      {/* 결과 */}
+      {phase === 'done' && result && (
+        <div style={{ marginTop: 12, padding: 18, background: '#F0FFF4', border: '1px solid #C6F6D5', borderRadius: 14, animation: 'fadeIn 0.4s ease' }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: '#276749', marginBottom: 10 }}>✅ 카드뉴스 완성!</div>
+          <div style={{ fontSize: 12, color: '#555', wordBreak: 'break-all', lineHeight: 1.7 }}>
+            <strong>출력:</strong> <code style={{ background: '#E2E8F0', padding: '2px 6px', borderRadius: 4 }}>{result.video_path}</code>
+          </div>
+          {result.video_url && (
+            <div style={{ marginTop: 8, fontSize: 13 }}>
+              ▶️ <a href={result.video_url} target="_blank" rel="noreferrer" style={{ color: RED, fontWeight: 700 }}>유튜브에서 보기</a>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [topic, setTopic] = useState('');
   const [context, setContext] = useState('');
@@ -78,7 +292,7 @@ export default function App() {
   const [editableThumbTexts, setEditableThumbTexts] = useState([]);
 
   // ── 탭 & 롱폼 상태 ──
-  const [activeTab, setActiveTab] = useState('shorts'); // 'shorts' | 'longform'
+  const [activeTab, setActiveTab] = useState('shorts'); // 'shorts' | 'longform' | 'cardnews'
   const [lfTitle, setLfTitle] = useState('');
   const [lfIntro, setLfIntro] = useState('');
   const [lfClips, setLfClips] = useState([
@@ -374,6 +588,7 @@ ${context}
           {[
             { key: 'shorts', icon: '📱', label: '쇼츠' },
             { key: 'longform', icon: '🎬', label: '롱폼' },
+            { key: 'cardnews', icon: '🃏', label: '카드뉴스' },
           ].map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key)}
               style={{
@@ -1022,6 +1237,11 @@ ${context}
 
         </>}
 
+        {/* ══════════════════════════════════════════════
+            카드뉴스 탭
+        ══════════════════════════════════════════════ */}
+        {activeTab === 'cardnews' && <CardNewsTab serverOnline={serverOnline} />}
+
         {/* ── Bible ── */}
         <details style={{ marginTop: 20 }}>
           <summary style={{ fontSize: 12, fontWeight: 600, color: '#888', cursor: 'pointer', padding: '8px 0' }}>📖 BluntEdge 바이블 요약 보기</summary>
@@ -1041,7 +1261,7 @@ ${context}
               <a key={key} href={ch.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#888', textDecoration: 'none' }}>{ch.icon} {ch.label}</a>
             ))}
           </div>
-          <div style={{ fontSize: 11, color: '#AAA' }}>BluntEdge Content Agent v3.1 · Powered by Claude</div>
+          <div style={{ fontSize: 11, color: '#AAA' }}>BluntEdge Content Agent v3.2 · Powered by Claude</div>
         </div>
       </div>
     </div>

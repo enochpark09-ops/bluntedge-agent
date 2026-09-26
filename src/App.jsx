@@ -87,6 +87,55 @@ export default function App() {
   // ── 시리즈 상태 ──
   const [selectedSeries, setSelectedSeries] = useState('free');
 
+  // ── 브리핑 상태 ──
+  const [briefingData, setBriefingData] = useState(null);
+  const [briefingLoading, setBriefingLoading] = useState(false);
+  const [briefingError, setBriefingError] = useState('');
+
+  const fetchBriefing = async () => {
+    try {
+      const res = await fetch(`${PIPELINE_URL}/api/briefing`);
+      const data = await res.json();
+      if (data.briefing) setBriefingData(data.briefing);
+      else setBriefingError('아직 브리핑이 없습니다. "브리핑 실행"을 눌러주세요.');
+    } catch { setBriefingError('서버 연결 실패'); }
+  };
+
+  const runBriefing = async () => {
+    setBriefingLoading(true);
+    setBriefingError('');
+    try {
+      const res = await fetch(`${PIPELINE_URL}/api/briefing/run`, { method: 'POST' });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      pollJob(data.job_id,
+        (j) => setBriefingError(j.step || '실행 중...'),
+        (j) => { setBriefingData(j.result?.briefing); setBriefingLoading(false); setBriefingError(''); },
+        (err) => { setBriefingLoading(false); setBriefingError(err); },
+      );
+    } catch (err) { setBriefingLoading(false); setBriefingError(err.message); }
+  };
+
+  const useBriefingIssue = (issue, attackData, defenseData) => {
+    const topicText = issue.title || '';
+    const contextParts = [];
+    if (issue.summary) contextParts.push(`[뉴스 요약]\n${issue.summary}`);
+    if (issue.conservative_frame) contextParts.push(`[보수 프레이밍]\n${issue.conservative_frame}`);
+    if (issue.progressive_frame) contextParts.push(`[진보 프레이밍]\n${issue.progressive_frame}`);
+    if (attackData) {
+      if (attackData.frame_intent) contextParts.push(`[프레임 의도]\n${attackData.frame_intent}`);
+      if (attackData.counter_attack) contextParts.push(`[역공 포인트]\n${attackData.counter_attack}`);
+      if (attackData.bluntedge_oneliner) contextParts.push(`[BE 한 줄]\n${attackData.bluntedge_oneliner}`);
+    }
+    if (defenseData) {
+      if (defenseData.government_position) contextParts.push(`[정부 입장]\n${defenseData.government_position}`);
+      if (defenseData.counter_narrative) contextParts.push(`[대안 내러티브]\n${defenseData.counter_narrative}`);
+    }
+    setTopic(topicText);
+    setContext(contextParts.join('\n\n'));
+    setActiveTab('shorts');
+  };
+
   // ── 썸네일 편집 상태 ──
   const [editableThumbTexts, setEditableThumbTexts] = useState([]);
 
@@ -115,6 +164,9 @@ export default function App() {
       .then(() => setServerOnline(true))
       .catch(() => setServerOnline(false));
   }, []);
+  useEffect(() => {
+    if (activeTab === 'briefing' && serverOnline && !briefingData) fetchBriefing();
+  }, [activeTab, serverOnline]);
 
   const isEditorial = !!selectedPaper;
   const accentColor = isEditorial ? (selectedPaper?.color || '#C53030') : '#C53030';
@@ -392,6 +444,7 @@ ${context}
         {/* ── 탭 전환 ── */}
         <div style={{ display: 'flex', gap: 0, marginBottom: 16, background: '#E5E2DB', borderRadius: 12, padding: 3 }}>
           {[
+            { key: 'briefing', icon: '📋', label: '브리핑' },
             { key: 'shorts', icon: '📱', label: '쇼츠' },
             { key: 'longform', icon: '🎬', label: '롱폼' },
           ].map(tab => (
@@ -407,6 +460,141 @@ ${context}
             </button>
           ))}
         </div>
+
+        {/* ══════════════════════════════════════════════
+            브리핑 탭
+        ══════════════════════════════════════════════ */}
+        {activeTab === 'briefing' && <>
+          <div style={{ animation: 'fadeIn 0.3s ease' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <span style={{ fontSize: 15, fontWeight: 800, color: '#C53030' }}>📋 오늘의 브리핑</span>
+              <button onClick={runBriefing} disabled={briefingLoading}
+                style={{
+                  padding: '8px 16px', borderRadius: 8, border: 'none',
+                  background: briefingLoading ? '#DDD' : '#C53030', color: '#FFF',
+                  fontSize: 12, fontWeight: 700, cursor: briefingLoading ? 'default' : 'pointer',
+                  fontFamily: 'inherit',
+                }}>
+                {briefingLoading ? '실행 중...' : '🔄 브리핑 실행'}
+              </button>
+            </div>
+
+            {briefingError && !briefingData && (
+              <div style={{ padding: '20px', textAlign: 'center', color: '#888', fontSize: 13 }}>
+                {briefingError}
+              </div>
+            )}
+
+            {briefingData && briefingData.employees && (() => {
+              const news = briefingData.employees['뉴스브리퍼'];
+              const fighter = briefingData.employees['이슈파이터'];
+              const attacker = briefingData.employees['이슈어택커'];
+              const pd = briefingData.employees['롱폼PD'];
+              const issues = news?.issues || [];
+              const defenses = fighter?.defenses || [];
+              const attacks = attacker?.attacks || [];
+
+              return (
+                <div>
+                  {/* 브리핑 날짜 */}
+                  <div style={{ fontSize: 11, color: '#AAA', marginBottom: 12, textAlign: 'center' }}>
+                    {briefingData.date} · AI 직원 4명 보고
+                  </div>
+
+                  {/* 롱폼PD 추천 */}
+                  {pd?.recommendation && (
+                    <div style={{ background: '#C5303010', border: '2px solid #C5303040', borderRadius: 14, padding: '16px', marginBottom: 12 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#C53030', marginBottom: 6 }}>🎬 롱폼PD 추천</div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: '#1A1A1A', marginBottom: 4 }}>{pd.recommendation.title}</div>
+                      <div style={{ fontSize: 12, color: '#555', marginBottom: 8 }}>{pd.recommendation.series} · {pd.recommendation.hook}</div>
+                      {pd.recommendation.thumbnail_ideas && (
+                        <div style={{ fontSize: 11, color: '#888' }}>
+                          썸네일: {pd.recommendation.thumbnail_ideas.join(' / ')}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 이슈 카드 5건 */}
+                  {issues.map((issue, idx) => {
+                    const attack = attacks.find(a => a.issue_rank === issue.rank) || attacks[idx];
+                    const defense = defenses.find(d => d.issue_rank === issue.rank) || defenses[idx];
+                    return (
+                      <div key={idx} style={{
+                        background: '#FFF', borderRadius: 14, border: '1px solid #E0DDD6',
+                        padding: '16px', marginBottom: 8, transition: 'all 0.2s',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                          <span style={{
+                            width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 11, fontWeight: 800, background: '#C53030', color: '#FFF',
+                          }}>{issue.rank || idx + 1}</span>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: '#1A1A1A', flex: 1 }}>{issue.title}</span>
+                        </div>
+                        <div style={{ fontSize: 12, color: '#555', lineHeight: 1.7, marginBottom: 10 }}>{issue.summary}</div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                          <div style={{ padding: '8px', borderRadius: 8, background: '#FFF5F5', fontSize: 11, lineHeight: 1.6 }}>
+                            <div style={{ fontWeight: 700, color: '#C53030', marginBottom: 4 }}>보수 프레임</div>
+                            {issue.conservative_frame}
+                          </div>
+                          <div style={{ padding: '8px', borderRadius: 8, background: '#F0FFF4', fontSize: 11, lineHeight: 1.6 }}>
+                            <div style={{ fontWeight: 700, color: '#2D8544', marginBottom: 4 }}>진보 프레임</div>
+                            {issue.progressive_frame}
+                          </div>
+                        </div>
+
+                        {attack?.bluntedge_oneliner && (
+                          <div style={{ padding: '8px 12px', borderRadius: 8, background: '#1A1A1A', fontSize: 12, color: '#FFF', fontWeight: 600, marginBottom: 10 }}>
+                            💬 {attack.bluntedge_oneliner}
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button onClick={() => useBriefingIssue(issue, attack, defense)}
+                            style={{
+                              flex: 1, padding: '8px', borderRadius: 8, border: 'none',
+                              background: '#C53030', color: '#FFF', fontSize: 11, fontWeight: 700,
+                              cursor: 'pointer', fontFamily: 'inherit',
+                            }}>
+                            🔪 쇼츠 만들기
+                          </button>
+                          <button onClick={() => { useBriefingIssue(issue, attack, defense); setActiveTab('longform'); }}
+                            style={{
+                              flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #C53030',
+                              background: '#FFF', color: '#C53030', fontSize: 11, fontWeight: 700,
+                              cursor: 'pointer', fontFamily: 'inherit',
+                            }}>
+                            🎬 롱폼 만들기
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* 쇼츠 아이디어 */}
+                  {pd?.shorts_ideas && pd.shorts_ideas.length > 0 && (
+                    <div style={{ background: '#FFF', borderRadius: 14, padding: '16px', border: '1px solid #E0DDD6', marginTop: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 8 }}>📌 쇼츠 아이디어</div>
+                      {pd.shorts_ideas.map((s, i) => (
+                        <div key={i} style={{ fontSize: 12, color: '#555', padding: '6px 0', borderBottom: '1px solid #F0F0F0' }}>
+                          <strong>{s.title}</strong>: {s.oneliner}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 서버 상태 */}
+                  {serverOnline === false && (
+                    <div style={{ marginTop: 12, padding: '12px', borderRadius: 10, background: '#FFF5F5', border: '1px solid #FED7D7', fontSize: 12, color: '#C53030' }}>
+                      ⚠️ 로컬 서버가 꺼져 있습니다. python server.py 실행 후 새로고침하세요.
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        </>}
 
         {/* ══════════════════════════════════════════════
             쇼츠 탭

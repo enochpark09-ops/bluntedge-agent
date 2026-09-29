@@ -91,14 +91,31 @@ export default function App() {
   const [briefingData, setBriefingData] = useState(null);
   const [briefingLoading, setBriefingLoading] = useState(false);
   const [briefingError, setBriefingError] = useState('');
+  const [briefingDates, setBriefingDates] = useState([]);
+  const [selectedBriefingDate, setSelectedBriefingDate] = useState('');
 
-  const fetchBriefing = async () => {
+  const fetchBriefing = async (date = '') => {
     try {
-      const res = await fetch(`${PIPELINE_URL}/api/briefing`);
+      const url = date
+        ? `${PIPELINE_URL}/api/briefing?date=${date}`
+        : `${PIPELINE_URL}/api/briefing`;
+      const res = await fetch(url);
       const data = await res.json();
-      if (data.briefing) setBriefingData(data.briefing);
-      else setBriefingError('아직 브리핑이 없습니다. "브리핑 실행"을 눌러주세요.');
+      if (data.briefing) {
+        setBriefingData(data.briefing);
+        setBriefingError('');
+      } else {
+        setBriefingError(data.error || '브리핑이 없습니다.');
+      }
     } catch { setBriefingError('서버 연결 실패'); }
+  };
+
+  const fetchBriefingDates = async () => {
+    try {
+      const res = await fetch(`${PIPELINE_URL}/api/briefings`);
+      const data = await res.json();
+      setBriefingDates(data.dates || []);
+    } catch {}
   };
 
   const runBriefing = async () => {
@@ -165,7 +182,10 @@ export default function App() {
       .catch(() => setServerOnline(false));
   }, []);
   useEffect(() => {
-    if (activeTab === 'briefing' && serverOnline && !briefingData) fetchBriefing();
+    if (activeTab === 'briefing' && serverOnline) {
+      if (!briefingData) fetchBriefing();
+      fetchBriefingDates();
+    }
   }, [activeTab, serverOnline]);
 
   const isEditorial = !!selectedPaper;
@@ -467,8 +487,27 @@ ${context}
         {activeTab === 'briefing' && <>
           <div style={{ animation: 'fadeIn 0.3s ease' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <span style={{ fontSize: 15, fontWeight: 800, color: '#C53030' }}>📋 오늘의 브리핑</span>
-              <button onClick={runBriefing} disabled={briefingLoading}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 15, fontWeight: 800, color: '#C53030' }}>📋 오늘의 브리핑</span>
+                {briefingDates.length > 1 && (
+                  <select
+                    value={selectedBriefingDate}
+                    onChange={e => {
+                      setSelectedBriefingDate(e.target.value);
+                      fetchBriefing(e.target.value);
+                    }}
+                    style={{
+                      padding: '4px 8px', borderRadius: 6, border: '1px solid #E0DDD6',
+                      fontSize: 11, fontFamily: 'inherit', background: '#FAFAF8', color: '#555',
+                    }}>
+                    <option value="">최신</option>
+                    {briefingDates.map(d => (
+                      <option key={d.date} value={d.date}>{d.display} ({d.issue_count}건)</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <button onClick={() => { runBriefing(); }} disabled={briefingLoading}
                 style={{
                   padding: '8px 16px', borderRadius: 8, border: 'none',
                   background: briefingLoading ? '#DDD' : '#C53030', color: '#FFF',

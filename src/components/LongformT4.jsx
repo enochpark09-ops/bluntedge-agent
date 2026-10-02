@@ -85,8 +85,15 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
   const [searching, setSearching] = useState({});
   const [saved, setSaved] = useState('');
 
+  // ── 커버 (썸네일 = 첫 화면) ──
+  const [coverPreview, setCoverPreview] = useState(null); // { path, ts, kind, has_media }
+  const [coverBusy, setCoverBusy] = useState(false);
+  const [coverMsg, setCoverMsg] = useState('');
+
   const [video, setVideo] = useState(null);
   const [thumbTexts, setThumbTexts] = useState([]);
+  const [thumbPreviews, setThumbPreviews] = useState([]); // [{ path, ts }]
+  const [thumbBusy, setThumbBusy] = useState({});
   const [publish, setPublish] = useState({ youtube: true, blog: true, x: true });
   const [blogCat, setBlogCat] = useState('정치 분석');
   const [result, setResult] = useState(null);
@@ -138,7 +145,9 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
       setPlanId(id); setPlan(d.plan); setOpenSec(0);
       if (d.state?.stage === 'rendered' && d.state.video_path) {
         setVideo({ video_path: d.state.video_path, duration: d.state.duration });
-        setThumbTexts([...(d.plan.thumbnail_ideas || [d.plan.title?.slice(0, 15) || ''])].slice(0, 3));
+        const ideas = [d.plan.cover?.headline, ...(d.plan.thumbnail_ideas || [])].filter((x, k, arr) => x && arr.indexOf(x) === k);
+        setThumbTexts((ideas.length ? ideas : [d.plan.title?.slice(0, 15) || '']).slice(0, 3));
+        setThumbPreviews([]);
         setStep('thumbnail');
       } else setStep('review');
     } catch (e) { fail(e); }
@@ -190,6 +199,12 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
   // 클립 시간 문자열 → 초로 정리해서 서버로
   const normalizedPlan = () => ({
     ...plan,
+    cover: (() => {
+      const c = { ...(plan.cover || { source: 'auto' }) };
+      if (!c.headline) c.headline = plan.thumbnail_ideas?.[0] || '';
+      if (c.source === 'youtube') c.at = toSec(c.atText) ?? 0;
+      return c;
+    })(),
     sections: plan.sections.map(s => {
       if (!s.clip) return s;
       const c = { ...s.clip };
@@ -235,9 +250,60 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
       pollJob(d.job_id, j => setMsg(j.step || ''), j => {
         setVideo({ video_path: j.result.video_path, duration: j.result.duration });
         setThumbTexts([...(j.result.thumbnail_candidates || [])]);
+        const ts = Date.now();
+        setThumbPreviews((j.result.thumbnail_previews || []).map(p => (p ? { path: p, ts } : null)));
         setStep('thumbnail');
       }, fail);
     } catch (e) { fail(e); }
+  };
+
+  // ── 커버 ──
+  const cover = plan?.cover || { source: 'auto' };
+  const setCover = (patch) => setPlan(p => ({ ...p, cover: { ...(p.cover || { source: 'auto' }), ...patch } }));
+  const coverHeadline = cover.headline ?? (plan?.thumbnail_ideas?.[0] || '');
+  const allCandidates = (plan?.sections || []).flatMap(s => s.candidates || [])
+    .filter((c, i, arr) => arr.findIndex(x => x.url === c.url) === i);
+  const firstClipSec = (plan?.sections || []).find(s => s.clip);
+
+  const uploadCover = async (file) => {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('plan_id', planId); fd.append('cover', file);
+    try {
+      const d = await (await fetch(`${PIPELINE_URL}/api/longform/upload_cover`, { method: 'POST', body: fd })).json();
+      if (d.error) throw new Error(d.error);
+      setCover({ source: 'file', path: d.path, name: d.name, kind: d.kind });
+      setCoverPreview(null);
+    } catch (e) { setCoverMsg(`업로드 실패: ${e.message}`); }
+  };
+
+  const previewCover = async () => {
+    setCoverBusy(true); setCoverMsg(cover.source === 'youtube' || (cover.source === 'auto' && firstClipSec?.clip?.source === 'youtube') ? '커버 영상 받는 중…' : '미리보기 만드는 중…');
+    try {
+      const np = normalizedPlan();
+      np.cover = { ...(np.cover || { source: 'auto' }), headline: coverHeadline };
+      if (np.cover.source === 'youtube') np.cover.at = toSec(np.cover.atText) ?? 0;
+      const d = await (await fetch(`${PIPELINE_URL}/api/longform/cover_preview`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan_id: planId, plan: np }),
+      })).json();
+      if (d.error) throw new Error(d.error);
+      setCoverPreview({ path: d.path, ts: Date.now(), kind: d.kind, has_media: d.has_media });
+      setCoverMsg(d.has_media ? '' : '배경 소스가 없어 기본 어두운 배경으로 표시됩니다');
+    } catch (e) { setCoverMsg(e.message); }
+    setCoverBusy(false);
+  };
+
+  const refreshThumb = async (i) => {
+    setThumbBusy(b => ({ ...b, [i]: true }));
+    try {
+      const d = await (await fetch(`${PIPELINE_URL}/api/longform/thumb_preview`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan_id: planId, text: thumbTexts[i], index: i }),
+      })).json();
+      if (d.error) throw new Error(d.error);
+      setThumbPreviews(arr => { const a = [...arr]; a[i] = { path: d.path, ts: Date.now() }; return a; });
+    } catch { /* noop */ }
+    setThumbBusy(b => ({ ...b, [i]: false }));
   };
 
   // ── ④ 발행 ──
@@ -258,6 +324,7 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
 
   const reset = () => {
     setStep('pick'); setPlan(null); setPlanId(''); setVideo(null); setResult(null); setError(''); setNote('');
+    setCoverPreview(null); setCoverMsg(''); setThumbPreviews([]);
     setSearchQ({}); loadLists();
   };
 
@@ -376,6 +443,101 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
           <input value={plan.title || ''} onChange={e => setField('title', e.target.value)} style={{ ...input, marginBottom: 10, fontWeight: 700 }} />
           <label style={label}>오프닝 훅</label>
           <textarea value={plan.hook || ''} onChange={e => setField('hook', e.target.value)} rows={3} style={{ ...input, resize: 'vertical', lineHeight: 1.7 }} />
+        </div>
+
+        {/* ── 커버: 썸네일 = 첫 화면 ── */}
+        <div style={{ ...card, border: '2px solid #1A1A1A' }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: '#1A1A1A', marginBottom: 4 }}>🖼️ 커버 (썸네일 = 영상 첫 화면)</div>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 10 }}>
+            같은 사진·영상과 문구가 썸네일과 인트로에 똑같이 들어갑니다. 클릭한 화면 그대로 영상이 시작돼 신뢰도가 올라갑니다.
+          </div>
+
+          <label style={label}>커버 문구 <span style={{ fontWeight: 400, color: '#AAA' }}>(15자 안팎 · | 줄바꿈 · *강조* 빨간색)</span></label>
+          <input value={coverHeadline} onChange={e => { setCover({ headline: e.target.value }); }}
+            placeholder="예: 첫날 혼선? |*78년 권력*이 끝났다" style={{ ...input, fontWeight: 800, fontSize: 15, marginBottom: 6 }} />
+          {(plan.thumbnail_ideas || []).length > 0 && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+              {plan.thumbnail_ideas.map((t, k) => (
+                <button key={k} onClick={() => setCover({ headline: t })} style={chip(coverHeadline === t)}>{t}</button>
+              ))}
+            </div>
+          )}
+
+          <label style={label}>배경 소스</label>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+            {[
+              { k: 'auto', t: `🎥 첫 클립 자동${firstClipSec ? '' : ' (클립 없음)'}` },
+              { k: 'youtube', t: '▶️ 유튜브 장면 지정' },
+              { k: 'file', t: '📁 사진·영상 업로드' },
+              { k: 'none', t: '⬛ 배경 없음' },
+            ].map(o => (
+              <button key={o.k} onClick={() => { setCover({ source: o.k }); setCoverPreview(null); }} style={{ ...chip(cover.source === o.k), flex: '1 1 auto' }}>{o.t}</button>
+            ))}
+          </div>
+
+          {cover.source === 'auto' && (
+            <div style={{ fontSize: 11, color: firstClipSec ? '#555' : RED, marginBottom: 10 }}>
+              {firstClipSec
+                ? `섹션 '${firstClipSec.heading}'의 클립(${firstClipSec.clip.label || firstClipSec.clip.title || '선택한 클립'}) 앞부분을 배경으로 씁니다.`
+                : '아직 선택한 클립이 없습니다. 섹션에서 클립을 고르거나 다른 배경 소스를 선택하세요.'}
+            </div>
+          )}
+
+          {cover.source === 'youtube' && (
+            <div style={{ marginBottom: 10 }}>
+              {allCandidates.length > 0 && (
+                <select value={cover.url || ''} onChange={e => {
+                  const c = allCandidates.find(x => x.url === e.target.value);
+                  setCover({ url: e.target.value, label: cover.label || c?.channel || '', title: c?.title });
+                  setCoverPreview(null);
+                }} style={{ ...input, marginBottom: 6 }}>
+                  <option value="">— 섹션 클립 후보에서 고르기 —</option>
+                  {allCandidates.map(c => <option key={c.url} value={c.url}>[{c.channel}] {c.title}</option>)}
+                </select>
+              )}
+              <input value={cover.url || ''} onChange={e => { setCover({ url: e.target.value }); setCoverPreview(null); }}
+                placeholder="또는 유튜브 링크 붙여넣기" style={{ ...input, marginBottom: 6 }} />
+              {ytId(cover.url) && (
+                <div style={{ position: 'relative', paddingTop: '56.25%', marginBottom: 6, borderRadius: 6, overflow: 'hidden' }}>
+                  <iframe title="cover-yt" src={`https://www.youtube.com/embed/${ytId(cover.url)}?start=${Math.floor(toSec(cover.atText) || 0)}`}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }} allowFullScreen />
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: '#888', whiteSpace: 'nowrap' }}>장면 시작</span>
+                <input value={cover.atText || ''} onChange={e => { setCover({ atText: e.target.value }); setCoverPreview(null); }}
+                  placeholder="0:42" style={{ ...input, width: 80, padding: 6 }} />
+                <span style={{ fontSize: 10, color: '#AAA' }}>여기서부터 12초를 인트로 배경으로, 2초 지점 장면을 썸네일로 씁니다</span>
+              </div>
+            </div>
+          )}
+
+          {cover.source === 'file' && (
+            <div style={{ marginBottom: 10 }}>
+              <button onClick={() => document.getElementById('t4-cover-up').click()} style={{ ...chip(false), width: '100%', padding: 12 }}>
+                {cover.path ? `✓ ${cover.name || '업로드됨'} (${cover.kind === 'image' ? '사진' : '영상'}) — 다시 고르기` : '📁 사진(jpg·png) 또는 영상(mp4) 선택'}
+              </button>
+              <input id="t4-cover-up" type="file" accept="image/*,video/*" style={{ display: 'none' }} onChange={e => uploadCover(e.target.files[0])} />
+              <div style={{ fontSize: 10, color: '#AAA', marginTop: 4 }}>사진은 천천히 확대되는 효과로, 영상은 앞 12초가 배경으로 쓰입니다. 보도사진은 출처·사용 권한을 꼭 확인하세요.</div>
+            </div>
+          )}
+
+          {cover.source !== 'none' && (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 10 }}>
+              <span style={{ fontSize: 11, color: '#888', whiteSpace: 'nowrap' }}>출처 표기</span>
+              <input value={cover.label || ''} onChange={e => setCover({ label: e.target.value })}
+                placeholder={cover.source === 'auto' ? (firstClipSec?.clip?.label || '예: KTV 국민방송') : '예: KTV 국민방송'} style={{ ...input, padding: 6 }} />
+            </div>
+          )}
+
+          <button onClick={previewCover} disabled={coverBusy} style={{ ...btn(false, coverBusy), width: '100%', color: '#1A1A1A', fontWeight: 800 }}>
+            {coverBusy ? coverMsg || '만드는 중…' : '🖼️ 썸네일·첫 화면 미리보기'}
+          </button>
+          {!coverBusy && coverMsg && <div style={{ fontSize: 11, color: RED, marginTop: 6 }}>{coverMsg}</div>}
+          {coverPreview && (
+            <img alt="cover preview" src={`${mediaUrl(coverPreview.path)}&t=${coverPreview.ts}`}
+              style={{ width: '100%', borderRadius: 8, marginTop: 10, border: '1px solid #E0DDD6', display: 'block' }} />
+          )}
         </div>
 
         {/* 팩트체크 결과 */}
@@ -541,13 +703,24 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
             </div>
           )}
 
-          <div style={label}>🖼️ 썸네일 문구 선택 → 발행 <span style={{ fontWeight: 400, color: '#AAA' }}>(수정 가능)</span></div>
+          <div style={label}>🖼️ 썸네일 선택 → 발행 <span style={{ fontWeight: 400, color: '#AAA' }}>(문구 수정 후 ↻로 다시 그리기)</span></div>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>
+            ① 시안은 영상 첫 화면과 같은 문구입니다. 다른 문구를 고르면 썸네일과 첫 화면 문구가 달라집니다.
+          </div>
           {thumbTexts.map((t, i) => (
-            <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-              <input value={t} onChange={e => setThumbTexts(a => a.map((x, j) => (j === i ? e.target.value : x)))}
-                style={{ flex: 1, padding: '12px 14px', borderRadius: 10, background: '#1A1A1A', border: '2px solid #333', color: '#FFF', fontSize: 16, fontWeight: 800, fontFamily: 'inherit', textAlign: 'center' }} />
-              <button onClick={() => startPublish(thumbTexts[i])} disabled={!t.trim() || !(publish.youtube || publish.blog || publish.x)}
-                style={{ ...btn(true, !t.trim()), padding: '12px 16px', whiteSpace: 'nowrap' }}>선택·발행</button>
+            <div key={i} style={{ marginBottom: 14, padding: 10, borderRadius: 10, border: i === 0 ? `2px solid ${RED}` : '1px solid #E0DDD6', background: '#FAFAF8' }}>
+              {thumbPreviews[i] && (
+                <img alt={`thumb-${i}`} src={`${mediaUrl(thumbPreviews[i].path)}&t=${thumbPreviews[i].ts}`}
+                  style={{ width: '100%', borderRadius: 6, display: 'block', marginBottom: 8, opacity: thumbBusy[i] ? 0.4 : 1 }} />
+              )}
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input value={t} onChange={e => setThumbTexts(a => a.map((x, j) => (j === i ? e.target.value : x)))}
+                  onKeyDown={e => e.key === 'Enter' && refreshThumb(i)}
+                  style={{ flex: 1, padding: '10px 12px', borderRadius: 8, background: '#1A1A1A', border: '2px solid #333', color: '#FFF', fontSize: 15, fontWeight: 800, fontFamily: 'inherit', textAlign: 'center' }} />
+                <button onClick={() => refreshThumb(i)} disabled={thumbBusy[i]} title="시안 다시 그리기" style={{ ...chip(false), fontSize: 14 }}>↻</button>
+                <button onClick={() => startPublish(thumbTexts[i])} disabled={!t.trim() || !(publish.youtube || publish.blog || publish.x)}
+                  style={{ ...btn(true, !t.trim()), padding: '10px 14px', whiteSpace: 'nowrap' }}>{i === 0 ? '① 선택·발행' : '선택·발행'}</button>
+              </div>
             </div>
           ))}
           <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>

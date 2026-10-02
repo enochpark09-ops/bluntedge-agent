@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { CHANNELS } from './config/bible.js';
 import { generateContent } from './services/api.js';
+import LongformT4 from './components/LongformT4.jsx';
 
 const PIPELINE_URL = 'http://localhost:5050';
 
@@ -173,6 +174,17 @@ export default function App() {
   const [lfMsg, setLfMsg] = useState('');
   const [lfResult, setLfResult] = useState(null);
   const [lfError, setLfError] = useState('');
+
+  // ── 타입4 (브리핑 기반 롱폼) ──
+  const [lfMode, setLfMode] = useState('t4'); // 't4' 브리핑 기반 | 'manual' 수동 클립(기존)
+  const [t4Preset, setT4Preset] = useState(null); // { date, rank }
+  const briefingFileDate = () =>
+    selectedBriefingDate || (briefingData?.date || '').slice(0, 10).replace(/-/g, '');
+  const openT4 = (rank = null) => {
+    setT4Preset({ date: briefingFileDate(), rank });
+    setLfMode('t4');
+    setActiveTab('longform');
+  };
 
   useEffect(() => { inputRef.current?.focus(); }, []);
   useEffect(() => {
@@ -551,6 +563,14 @@ ${context}
                           썸네일: {pd.recommendation.thumbnail_ideas.join(' / ')}
                         </div>
                       )}
+                      <button onClick={() => openT4(null)}
+                        style={{
+                          width: '100%', marginTop: 10, padding: '9px', borderRadius: 8, border: 'none',
+                          background: '#C53030', color: '#FFF', fontSize: 12, fontWeight: 700,
+                          cursor: 'pointer', fontFamily: 'inherit',
+                        }}>
+                        🎬 이 추천으로 심층분석 롱폼 만들기
+                      </button>
                     </div>
                   )}
 
@@ -598,7 +618,7 @@ ${context}
                             }}>
                             🔪 쇼츠 만들기
                           </button>
-                          <button onClick={() => { useBriefingIssue(issue, attack, defense); setActiveTab('longform'); }}
+                          <button onClick={() => openT4(issue.rank || idx + 1)}
                             style={{
                               flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #C53030',
                               background: '#FFF', color: '#C53030', fontSize: 11, fontWeight: 700,
@@ -1035,6 +1055,35 @@ ${context}
         ══════════════════════════════════════════════ */}
         {activeTab === 'longform' && <>
 
+          {/* ── 롱폼 모드 전환: 타입4(브리핑 기반) / 수동 클립(기존) ── */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+            {[
+              { key: 't4', label: '📋 심층분석 (브리핑 기반)' },
+              { key: 'manual', label: '✂️ 수동 클립 5개' },
+            ].map(m => (
+              <button key={m.key} onClick={() => setLfMode(m.key)}
+                style={{
+                  flex: 1, padding: '8px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
+                  fontSize: 12, fontWeight: 700,
+                  background: lfMode === m.key ? '#1A1A1A' : '#FFF',
+                  color: lfMode === m.key ? '#FFF' : '#888',
+                  border: lfMode === m.key ? '1px solid #1A1A1A' : '1px solid #E0DDD6',
+                }}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          {lfMode === 't4' && (
+            <LongformT4
+              serverOnline={serverOnline}
+              presetDate={t4Preset?.date}
+              presetRank={t4Preset?.rank}
+              onPresetConsumed={() => setT4Preset(null)}
+            />
+          )}
+
+          {lfMode === 'manual' && <>
           {/* ── 롱폼: 입력 (idle) ── */}
           {lfStep === 'idle' && (
             <div style={{ animation: 'fadeIn 0.3s ease' }}>
@@ -1294,6 +1343,7 @@ ${context}
             </div>
           )}
 
+          </>}
         </>}
 
         {/* ── Bible ── */}
@@ -1315,7 +1365,7 @@ ${context}
               <a key={key} href={ch.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#888', textDecoration: 'none' }}>{ch.icon} {ch.label}</a>
             ))}
           </div>
-          <div style={{ fontSize: 11, color: '#AAA' }}>BluntEdge Content Agent v3.1 · Powered by Claude</div>
+          <div style={{ fontSize: 11, color: '#AAA' }}>BluntEdge Content Agent v3.2 · Powered by Claude</div>
         </div>
       </div>
     </div>

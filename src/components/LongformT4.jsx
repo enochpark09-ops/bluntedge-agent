@@ -89,6 +89,10 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
   const [coverPreview, setCoverPreview] = useState(null); // { path, ts, kind, has_media }
   const [coverBusy, setCoverBusy] = useState(false);
   const [coverMsg, setCoverMsg] = useState('');
+  // ── 요약 인포그래픽 ──
+  const [igPreview, setIgPreview] = useState(null); // { path, ts }
+  const [igBusy, setIgBusy] = useState(false);
+  const [igMsg, setIgMsg] = useState('');
 
   const [video, setVideo] = useState(null);
   const [thumbTexts, setThumbTexts] = useState([]);
@@ -277,6 +281,22 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
     } catch (e) { setCoverMsg(`업로드 실패: ${e.message}`); }
   };
 
+  const ig = plan?.infographic || null;
+  const setIg = (patch) => setPlan(p => ({ ...p, infographic: { ...(p.infographic || { stats: [], points: ['', '', ''] }), ...patch } }));
+  const runInfographic = async (extract) => {
+    setIgBusy(true); setIgMsg(extract ? '대본에서 숫자·요약 뽑는 중…' : '시안 그리는 중…');
+    try {
+      const d = await (await fetch(`${PIPELINE_URL}/api/longform/infographic`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan_id: planId, plan: normalizedPlan(), extract }),
+      })).json();
+      if (d.error) throw new Error(d.error);
+      setPlan(p => ({ ...p, infographic: d.infographic }));
+      setIgPreview({ path: d.path, ts: Date.now() }); setIgMsg('');
+    } catch (e) { setIgMsg(e.message); }
+    setIgBusy(false);
+  };
+
   const previewCover = async () => {
     setCoverBusy(true); setCoverMsg(cover.source === 'youtube' || (cover.source === 'auto' && firstClipSec?.clip?.source === 'youtube') ? '커버 영상 받는 중…' : '미리보기 만드는 중…');
     try {
@@ -324,7 +344,7 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
 
   const reset = () => {
     setStep('pick'); setPlan(null); setPlanId(''); setVideo(null); setResult(null); setError(''); setNote('');
-    setCoverPreview(null); setCoverMsg(''); setThumbPreviews([]);
+    setCoverPreview(null); setCoverMsg(''); setThumbPreviews([]); setIgPreview(null); setIgMsg('');
     setSearchQ({}); loadLists();
   };
 
@@ -538,6 +558,59 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
             <img alt="cover preview" src={`${mediaUrl(coverPreview.path)}&t=${coverPreview.ts}`}
               style={{ width: '100%', borderRadius: 8, marginTop: 10, border: '1px solid #E0DDD6', display: 'block' }} />
           )}
+        </div>
+
+        {/* ── 요약 인포그래픽 (커버 숫자 + 마무리 화면) ── */}
+        <div style={{ ...card, border: '2px solid #1A1A1A' }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: '#1A1A1A', marginBottom: 4 }}>📊 인포그래픽 (커버 숫자 + 마무리 요약)</div>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 10 }}>
+            핵심 숫자는 썸네일·첫 화면에 크게, 숫자 카드와 요약 3줄은 마무리 멘트 화면에 들어갑니다. 대본에 있는 숫자만 자동으로 뽑힙니다.
+          </div>
+          {!ig ? (
+            <button onClick={() => runInfographic(true)} disabled={igBusy} style={{ ...btn(true, igBusy), width: '100%' }}>
+              {igBusy ? igMsg : '📊 대본에서 자동 추출'}
+            </button>
+          ) : <>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+              <input value={ig.hook_number || ''} onChange={e => setIg({ hook_number: e.target.value })} placeholder="핵심 숫자"
+                style={{ ...input, width: 130, fontWeight: 800, color: RED }} />
+              <input value={ig.hook_label || ''} onChange={e => setIg({ hook_label: e.target.value })} placeholder="숫자 설명 (12자)" style={input} />
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#555', marginBottom: 10, cursor: 'pointer' }}>
+              <input type="checkbox" checked={(plan.cover || {}).show_number !== false}
+                onChange={e => { setCover({ show_number: e.target.checked }); setCoverPreview(null); }} />
+              썸네일·첫 화면에 핵심 숫자 표시
+            </label>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#888', marginBottom: 4 }}>보조 숫자 카드 (최대 2개)</div>
+            {[0, 1].map(k => {
+              const st = (ig.stats || [])[k] || { value: '', label: '' };
+              const upd = (f, v) => { const arr = [...(ig.stats || [])]; while (arr.length <= k) arr.push({ value: '', label: '' }); arr[k] = { ...arr[k], [f]: v }; setIg({ stats: arr.filter(x => x.value || x.label) }); };
+              return (
+                <div key={k} style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+                  <input value={st.value} onChange={e => upd('value', e.target.value)} placeholder="숫자" style={{ ...input, width: 130, padding: 7 }} />
+                  <input value={st.label} onChange={e => upd('label', e.target.value)} placeholder="설명" style={{ ...input, padding: 7 }} />
+                </div>
+              );
+            })}
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#888', margin: '8px 0 4px' }}>요약 3줄</div>
+            {[0, 1, 2].map(k => (
+              <input key={k} value={(ig.points || [])[k] || ''} placeholder={`요약 ${k + 1} (24자 이내 · *강조*)`}
+                onChange={e => { const pts = [...(ig.points || ['', '', ''])]; pts[k] = e.target.value; setIg({ points: pts }); }}
+                style={{ ...input, padding: 7, marginBottom: 4 }} />
+            ))}
+            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+              <button onClick={() => runInfographic(false)} disabled={igBusy} style={{ ...btn(false, igBusy), flex: 2, color: '#1A1A1A', fontWeight: 800 }}>
+                {igBusy ? igMsg : '🏁 마무리 화면 미리보기'}
+              </button>
+              <button onClick={() => window.confirm('대본에서 다시 뽑을까요? 수정한 값은 덮어씁니다.') && runInfographic(true)} disabled={igBusy}
+                style={{ ...btn(false, igBusy), flex: 1 }}>↻ 다시 추출</button>
+            </div>
+            {!igBusy && igMsg && <div style={{ fontSize: 11, color: RED, marginTop: 6 }}>{igMsg}</div>}
+            {igPreview && (
+              <img alt="summary preview" src={`${mediaUrl(igPreview.path)}&t=${igPreview.ts}`}
+                style={{ width: '100%', borderRadius: 8, marginTop: 10, border: '1px solid #E0DDD6', display: 'block' }} />
+            )}
+          </>}
         </div>
 
         {/* 팩트체크 결과 */}

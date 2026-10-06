@@ -157,6 +157,28 @@ export default function App() {
   // ── 썸네일 편집 상태 ──
   const [editableThumbTexts, setEditableThumbTexts] = useState([]);
 
+  // ── 인포그래픽 (첫 화면 = 썸네일, 마지막 = 요약) ──
+  const [igInfo, setIgInfo] = useState(null);
+  const [igPreviews, setIgPreviews] = useState([]);
+  const [igSummary, setIgSummary] = useState('');
+  const [igTs, setIgTs] = useState(0);
+  const [igBusy, setIgBusy] = useState(false);
+  const mediaUrl = (p) => `${PIPELINE_URL}/api/media?path=${encodeURIComponent(p || '')}&t=${igTs}`;
+  const setIgField = (k, v) => setIgInfo(x => ({ ...(x || {}), [k]: v }));
+  const refreshInfographic = async () => {
+    if (!igInfo || !videoData) return;
+    setIgBusy(true);
+    try {
+      const d = await (await fetch(`${PIPELINE_URL}/api/infographic/preview`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ output_dir: videoData.output_dir, infographic: igInfo, texts: editableThumbTexts, title: videoData.title }),
+      })).json();
+      if (d.error) throw new Error(d.error);
+      setIgPreviews(d.previews || []); setIgSummary(d.summary || ''); setIgTs(Date.now());
+    } catch (e) { alert(`시안 갱신 실패: ${e.message}`); }
+    setIgBusy(false);
+  };
+
   // ── 탭 & 롱폼 상태 ──
   const [activeTab, setActiveTab] = useState('shorts'); // 'shorts' | 'longform'
   const [lfTitle, setLfTitle] = useState('');
@@ -296,6 +318,10 @@ ${context}
             const candidates = j.result.thumbnail_candidates || [];
             setThumbCandidates(candidates);
             setEditableThumbTexts([...candidates]);
+            setIgInfo(j.result.infographic || null);
+            setIgPreviews(j.result.thumbnail_previews || []);
+            setIgSummary(j.result.summary_preview || '');
+            setIgTs(Date.now());
             setVideoData({
               video_path: j.result.video_path,
               output_dir: j.result.output_dir,
@@ -335,6 +361,7 @@ ${context}
           publish_blog: publishChannels.blog,
           publish_x: publishChannels.x,
           blog_category: blogCategory,
+          infographic: igInfo,
         }),
       });
       const data = await res.json();
@@ -355,6 +382,7 @@ ${context}
     setPipeError('');
     setThumbCandidates([]);
     setEditableThumbTexts([]);
+    setIgInfo(null); setIgPreviews([]); setIgSummary('');
     setVideoData(null);
     setBgImage1(null);
     setBgImage2(null);
@@ -948,8 +976,8 @@ ${context}
         {/* ══════════ 썸네일 선택 ══════════ */}
         {pipeStep === 'thumbnail' && thumbCandidates.length > 0 && (
           <div style={{ background: '#FFF', borderRadius: 14, padding: '20px', border: `2px solid ${accentColor}`, marginBottom: 16, animation: 'fadeIn 0.4s ease' }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: accentColor, marginBottom: 6 }}>🖼️ 썸네일 멘트 선택</div>
-            <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>문구를 직접 수정한 뒤 선택하세요.</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: accentColor, marginBottom: 6 }}>🖼️ 썸네일 = 첫 화면 선택</div>
+            <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>고른 시안이 썸네일과 영상 첫 1.5초에 똑같이 들어갑니다. 문구를 고친 뒤 ↻로 다시 그려 확인하세요.</div>
             <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
               {PUBLISH_CHANNELS.filter(ch => publishChannels[ch.key]).map(ch => (
                 <span key={ch.key} style={{
@@ -958,38 +986,74 @@ ${context}
                 }}>{ch.icon} {ch.label}</span>
               ))}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {/* 인포그래픽: 숫자·요약 확인/수정 */}
+            {igInfo && (
+              <div style={{ background: '#FAFAF8', border: '1px solid #E0DDD6', borderRadius: 10, padding: 12, marginBottom: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 8 }}>
+                  📊 인포그래픽 확인 <span style={{ fontWeight: 400, color: '#AAA' }}>(스크립트에 있는 숫자만 자동 추출됨 · 수정 후 ↻ 시안 갱신)</span>
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                  <input value={igInfo.hook_number || ''} onChange={e => setIgField('hook_number', e.target.value)} placeholder="핵심 숫자 (예: 991건)"
+                    style={{ width: 130, padding: '8px 10px', borderRadius: 8, border: '1px solid #E0DDD6', fontSize: 14, fontWeight: 800, color: '#C53030', fontFamily: 'inherit' }} />
+                  <input value={igInfo.hook_label || ''} onChange={e => setIgField('hook_label', e.target.value)} placeholder="숫자 설명 (12자)"
+                    style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px solid #E0DDD6', fontSize: 12, fontFamily: 'inherit' }} />
+                </div>
+                {[0, 1, 2].map(k => (
+                  <input key={k} value={(igInfo.points || [])[k] || ''} placeholder={`요약 ${k + 1} (24자 이내)`}
+                    onChange={e => { const pts = [...(igInfo.points || ['', '', ''])]; pts[k] = e.target.value; setIgField('points', pts); }}
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid #E0DDD6', fontSize: 12, fontFamily: 'inherit', marginBottom: 4 }} />
+                ))}
+                <button onClick={refreshInfographic} disabled={igBusy}
+                  style={{ width: '100%', marginTop: 4, padding: '8px', borderRadius: 8, border: '1px solid #1A1A1A', background: '#FFF', color: '#1A1A1A', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  {igBusy ? '그리는 중…' : '↻ 시안 다시 그리기 (문구·숫자·요약 반영)'}
+                </button>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {editableThumbTexts.map((txt, i) => (
-                <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
-                  <input
-                    value={txt}
-                    onChange={e => {
-                      const updated = [...editableThumbTexts];
-                      updated[i] = e.target.value;
-                      setEditableThumbTexts(updated);
-                    }}
-                    style={{
-                      flex: 1, padding: '14px 16px', borderRadius: 10,
-                      background: '#1A1A1A', border: '2px solid #333',
-                      color: '#FFF', fontSize: 18, fontWeight: 800,
-                      fontFamily: 'inherit', textAlign: 'center',
-                      letterSpacing: -0.5,
-                    }}
-                    onFocus={e => e.target.style.borderColor = accentColor}
-                    onBlur={e => e.target.style.borderColor = '#333'}
-                  />
-                  <button onClick={() => startUpload(editableThumbTexts[i])}
-                    style={{
-                      padding: '14px 18px', borderRadius: 10, border: 'none',
-                      background: accentColor, color: '#FFF',
-                      fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                      fontFamily: 'inherit', whiteSpace: 'nowrap',
-                    }}>
-                    선택
-                  </button>
+                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+                  {igPreviews[i] && (
+                    <img alt={`hook-${i}`} src={mediaUrl(igPreviews[i])}
+                      style={{ width: 96, height: 170, objectFit: 'cover', borderRadius: 8, border: '1px solid #DDD', flexShrink: 0, opacity: igBusy ? 0.4 : 1 }} />
+                  )}
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <input
+                      value={txt}
+                      onChange={e => {
+                        const updated = [...editableThumbTexts];
+                        updated[i] = e.target.value;
+                        setEditableThumbTexts(updated);
+                      }}
+                      style={{
+                        flex: 1, padding: '14px 16px', borderRadius: 10,
+                        background: '#1A1A1A', border: '2px solid #333',
+                        color: '#FFF', fontSize: 17, fontWeight: 800,
+                        fontFamily: 'inherit', textAlign: 'center',
+                        letterSpacing: -0.5,
+                      }}
+                      onFocus={e => e.target.style.borderColor = accentColor}
+                      onBlur={e => e.target.style.borderColor = '#333'}
+                    />
+                    <button onClick={() => startUpload(editableThumbTexts[i])}
+                      style={{
+                        padding: '12px 18px', borderRadius: 10, border: 'none',
+                        background: accentColor, color: '#FFF',
+                        fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                        fontFamily: 'inherit', whiteSpace: 'nowrap',
+                      }}>
+                      이 썸네일로 발행 {igInfo ? '(= 첫 화면)' : ''}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
+            {igSummary && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 6 }}>🏁 마지막 화면 · 요약 인포그래픽 (4초)</div>
+                <img alt="summary" src={mediaUrl(igSummary)} style={{ width: 180, borderRadius: 8, border: '1px solid #DDD', opacity: igBusy ? 0.4 : 1 }} />
+              </div>
+            )}
             <button onClick={resetAll}
               style={{ width: '100%', marginTop: 12, padding: '10px', borderRadius: 8, border: '1px solid #E0DDD6', background: '#FFF', color: '#777', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
               취소 (발행 안 함)
@@ -1365,7 +1429,7 @@ ${context}
               <a key={key} href={ch.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#888', textDecoration: 'none' }}>{ch.icon} {ch.label}</a>
             ))}
           </div>
-          <div style={{ fontSize: 11, color: '#AAA' }}>BluntEdge Content Agent v3.3 · Powered by Claude</div>
+          <div style={{ fontSize: 11, color: '#AAA' }}>BluntEdge Content Agent v3.4 · Powered by Claude</div>
         </div>
       </div>
     </div>

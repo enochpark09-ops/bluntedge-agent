@@ -1,39 +1,123 @@
-# Double Y 루틴 v6.0
+# 🔪 BluntEdge — 정치 콘텐츠 에이전트
 
-doubley-agent v5.9를 개인 루틴 앱으로 줄인 버전입니다. 사업 운영(전략기획·기획부·에이전트·크리에이터, 05:00 AI 브리핑)은
-HANOK 상황판과 비서실장(매일 06:50)으로 옮겼습니다.
+> "무딘 척하지만, 벤다."
 
-남은 기능: 플래너(오늘의 루틴 체크·Top3·할 일·QT), 구글 캘린더, 백업(Google Sheets), 텔레그램 일정 알림.
-
-## 바뀐 점
-- 브라우저에서 Claude를 직접 부르던 코드 삭제 → VITE_ANTHROPIC_API_KEY 불필요(Vercel에서 지우세요)
-- QT 묵상 도움은 서버 함수 /api/qt 로 이전 (ANTHROPIC_API_KEY 서버 변수 사용)
-- 루틴 체크에서 EdgeStats·MarketEdge 제거, "웹소설 집필" → "『패수』 다듬기"
-- 텔레그램: 05:00은 AI 없이 루틴 안내, 시간별 알림은 09:00·21:00·23:00 세 개만 (api/_lib/utils.js 의 DEFAULT_SCHEDULE에서 수정)
-- 삭제한 API: briefing, editor, planner, researcher, revenue, strategist
-
-## Vercel 환경 변수
-- 유지: ANTHROPIC_API_KEY(새로 발급한 키), TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, VITE_GOOGLE_CLIENT_ID(캘린더)
-- 삭제: VITE_ANTHROPIC_API_KEY
+뉴스 주제를 입력하면 **YouTube 숏폼 스크립트 / X 스레드 / 블로그 포스트** 3종을 BluntEdge 톤으로 자동 생성하는 에이전트 앱입니다.
 
 ---
 
-## v6.1 — HANOK 업무 탭 (플래너 연동)
+## 🚀 빠른 시작 (로컬)
 
-플래너 탭 맨 앞에 **🏢 HANOK 업무**가 생겼습니다. 비서실장이 매일 06:50에 Drive `HANOK 비서실장 > 플래너 연동` 폴더에 올리는 `CEO일정-날짜.json`을 오전·오후 블록으로 보여 주고, 체크·메모는 같은 폴더의 `플래너체크-날짜.json`에 저장되어 다음 날 아침 보고에 반영됩니다.
+```bash
+# 1. 의존성 설치
+npm install
 
-연결은 Google Apps Script(본인 계정)로 합니다. 코드는 `apps-script/Code.gs`.
+# 2. 환경변수 설정
+cp .env.example .env
+# .env 파일을 열고 VITE_ANTHROPIC_API_KEY에 실제 키 입력
 
-### 설정 (한 번만, 약 10분)
-1. script.google.com → 새 프로젝트 → 이름 "HANOK 플래너 연동" → `Code.gs` 내용을 통째로 붙여넣기 → 저장
-2. 왼쪽 ⚙ 프로젝트 설정 → 스크립트 속성 → 속성 추가: `TOKEN` = 직접 정한 연동 비밀번호(12자 이상)
-3. 편집기에서 함수 `setupCheck` 선택 → 실행 → Google 권한 승인(고급 → 이동 → 허용)
-4. 배포 → 새 배포 → 유형 "웹 앱" → 실행 사용자: 나 / 액세스: 모든 사용자 → 배포 → 웹 앱 URL 복사
-5. 플래너 앱 → HANOK 업무 → 설정에 URL과 비밀번호 입력
-6. (알림) Vercel doubley-agent → Environment Variables: `HANOK_SYNC_URL`(웹 앱 URL), `HANOK_SYNC_TOKEN`(같은 비밀번호) 추가 → Redeploy
+# 3. 개발 서버 실행
+npm run dev
+```
 
-### 텔레그램 알림 (매시 정각 호출 기준)
-- 09:00 오전 블록(09:30–11:30) 할 일
-- 14:00 오후 블록(14:00–17:00) 할 일
-- 16:00 아직 체크 안 된 일
-- 23:00 아이디어 정리 (기존)
+브라우저에서 `http://localhost:5173` 접속.
+
+---
+
+## 📦 GitHub + Vercel 배포
+
+### Step 1: GitHub 레포 생성 & 푸시
+
+```bash
+# 프로젝트 폴더에서
+git init
+git add .
+git commit -m "🔪 BluntEdge Agent v1.0"
+
+# GitHub에서 새 레포 생성 후
+git remote add origin https://github.com/YOUR_USERNAME/bluntedge-agent.git
+git branch -M main
+git push -u origin main
+```
+
+### Step 2: Vercel 배포
+
+1. [vercel.com](https://vercel.com) 접속 → GitHub 계정 연결
+2. **"Add New Project"** → GitHub 레포 선택 (`bluntedge-agent`)
+3. **Framework Preset**: `Vite` 자동 감지됨
+4. **Environment Variables** 설정:
+   - `VITE_ANTHROPIC_API_KEY` = `sk-ant-xxxxx` (실제 키)
+5. **Deploy** 클릭
+
+✅ 이후 `main` 브랜치에 push할 때마다 자동 배포됩니다.
+
+---
+
+## 🔐 보안 주의사항
+
+⚠️ **중요**: 이 앱은 클라이언트에서 직접 Anthropic API를 호출합니다.
+
+- `.env` 파일은 **절대 GitHub에 올리지 마세요** (`.gitignore`에 포함됨)
+- Vercel 환경변수로 설정한 `VITE_` 접두사 변수는 빌드 시 번들에 포함됩니다
+- **개인 사용 전용**으로 운영하거나, 프로덕션 배포 시에는 백엔드 프록시 서버를 통해 API 키를 숨기는 것을 권장합니다
+
+### 프로덕션 보안 강화 (선택)
+
+공개 배포할 경우 Vercel Serverless Function으로 API 키를 숨길 수 있습니다:
+
+```
+/api/generate.js → Vercel Serverless Function (서버 환경변수 사용)
+프론트엔드 → /api/generate 호출 (키 노출 없음)
+```
+
+---
+
+## 📁 프로젝트 구조
+
+```
+bluntedge-agent/
+├── public/
+│   └── favicon.svg
+├── src/
+│   ├── config/
+│   │   └── bible.js          # BluntEdge 바이블 (시스템 프롬프트 + 채널별 포맷)
+│   ├── services/
+│   │   └── api.js             # Claude API 호출 모듈
+│   ├── App.jsx                # 메인 앱 컴포넌트
+│   ├── index.css              # 글로벌 스타일
+│   └── main.jsx               # React 엔트리포인트
+├── .env.example               # 환경변수 템플릿
+├── .gitignore
+├── index.html
+├── package.json
+├── vercel.json                # Vercel SPA 라우팅 설정
+├── vite.config.js
+└── README.md
+```
+
+---
+
+## ✏️ 커스터마이징
+
+### 톤/스타일 변경
+`src/config/bible.js`의 `BLUNTEDGE_SYSTEM` 수정
+
+### 채널 추가
+`src/config/bible.js`의 `CHANNEL_PROMPTS`에 새 채널 객체 추가
+
+### 모델 변경
+`src/services/api.js`에서 `model` 값 변경
+
+---
+
+## 📋 향후 계획
+
+- [ ] Vercel Serverless Function으로 API 키 보안 강화
+- [ ] 생성 히스토리 로컬 저장
+- [ ] 콘텐츠 캘린더 연동
+- [ ] 다른 카테고리 에이전트 추가 (스포츠, 경제 등)
+
+---
+
+*BluntEdge Content Agent v1.0*
+*더블와이스페이스 · Double Y Space*

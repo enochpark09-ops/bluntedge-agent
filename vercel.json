@@ -1,17 +1,5 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }],
-  "headers": [
-    {
-      "source": "/sw.js",
-      "headers": [
-        { "key": "Cache-Control", "value": "no-cache" },
-        { "key": "Content-Type", "value": "application/javascript" }
-      ]
-    }
-  ],
-  "crons": [
-    { "path": "/api/schedule-notify?hour=5", "schedule": "0 20 * * *" }
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

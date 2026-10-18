@@ -1,141 +1,1437 @@
-import { useState, useRef, useEffect } from "react";
-import CalendarTab from "./CalendarTab.jsx";
-import PlannerTab from "./PlannerTab.jsx";
-import BackupTab from "./BackupTab.jsx";
+import { useState, useRef, useEffect } from 'react';
+import { CHANNELS } from './config/bible.js';
+import { generateContent } from './services/api.js';
+import LongformT4 from './components/LongformT4.jsx';
 
-const C = {
-  bg: "#1a1a18", surface: "#242422", surface2: "#2a2a27", border: "#3a3a36",
-  gold: "#C4A86C", goldDim: "#c4a86c33", bronze: "#8B7355",
-  text: "#e8e4dc", textMuted: "#9a9690", textDim: "#6a6660",
-  green: "#6dcc7a", greenDim: "#6dcc7a22", red: "#e07070", redDim: "#e0707022", blue: "#7aabcc",
-};
+const PIPELINE_URL = 'http://localhost:5050';
 
-// ── localStorage 헬퍼 ─────────────────────────────────────────
-const ls = {
-  get: (k, def) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; } },
-  set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
-};
-
-const Ic = ({ n, s = 16 }) => {
-  const d = {
-    bot: <><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/><circle cx="19" cy="7" r="2" fill="currentColor" stroke="none" opacity=".5"/></>,
-    chart: <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>,
-    send: <><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></>,
-    mic: <><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></>,
-    micOff: <><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V5a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></>,
-    plus: <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
-    check: <polyline points="20 6 9 17 4 12"/>,
-    trash: <><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></>,
-    spin: <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>,
-    cal: <><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></>,
-    pdf: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h4"/></>,
-    back: <><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></>,
-    cloud: <><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></>,
-    edit: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></>,
-    save: <><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></>,
-    x: <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
-    target: <><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></>,
-  };
-  return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{d[n]}</svg>;
-};
-
-const BottomTab = ({ active, onClick, icon, label }) => (
-  <button onClick={onClick} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:3, padding:"9px 0 7px", background:"transparent", border:"none", color:active?C.gold:C.textDim, cursor:"pointer", fontSize:9, fontFamily:"inherit", fontWeight:active?700:400, borderTop:`2px solid ${active?C.gold:"transparent"}`, transition:"all .2s" }}>
-    {icon}{label}
-  </button>
-);
-
-// ── 체크리스트 헬퍼 ──────────────────────────────────────────
-const todayStr = () => {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-};
-const FIXED_ITEMS = [
-  { id:"qt",      emoji:"✝️", label:"QT" },
-  { id:"prayer",  emoji:"🙏", label:"기도 30분" },
-  { id:"workout", emoji:"🏃", label:"새벽운동" },
-  { id:"politics",emoji:"🎙️", label:"정치 BluntEdge 콘텐츠" },
-    { id:"novel",   emoji:"📖", label:"『패수』 다듬기" },
-  { id:"music",   emoji:"🎵", label:"음원 만들기" },
+const NEWSPAPERS = [
+  { id: 'chosun', name: '조선일보', url: 'https://www.chosun.com/opinion/editorial/', color: '#003876', stance: 'conservative' },
+  { id: 'joongang', name: '중앙일보', url: 'https://www.joongang.co.kr/opinion/editorial', color: '#E3000F', stance: 'conservative' },
+  { id: 'donga', name: '동아일보', url: 'https://www.donga.com/news/Opinion/Editorial', color: '#003DA5', stance: 'conservative' },
+  { id: 'hankyoreh', name: '한겨레', url: 'https://www.hani.co.kr/arti/opinion/editorial', color: '#00A651', stance: 'progressive' },
+  { id: 'khan', name: '경향신문', url: 'https://www.khan.co.kr/opinion/editorial', color: '#FF6600', stance: 'progressive' },
+  { id: 'hankook', name: '한국일보', url: 'https://www.hankookilbo.com/News/Opinion/Editorial', color: '#0066CC', stance: 'neutral' },
+  { id: 'mk', name: '매일경제', url: 'https://www.mk.co.kr/opinion/editorial', color: '#1A1A1A', stance: 'conservative' },
+  { id: 'hankyung', name: '한국경제', url: 'https://www.hankyung.com/opinion/editorial', color: '#C53030', stance: 'conservative' },
 ];
-const loadCL = () => {
-  const d = todayStr();
-  return ls.get(`cl_v2_${d}`, { fixed: {}, planner: {} });
-};
-const saveCL = (d, data) => ls.set(`cl_v2_${d}`, data);
 
-const getPlannerData = () => {
-  const d = todayStr();
-  const top3 = ls.get(`planner_top3_${d}`, []);
-  const ptodos = ls.get(`planner_todos_${d}`, []);
-  return [
-    ...top3.filter(t => t).map((t, i) => ({ id: `p_top_${i}`, emoji: "📌", label: t })),
-    ...ptodos.filter(t => t.text).map((t, i) => ({ id: `p_todo_${i}`, emoji: "✅", label: t.text })),
-  ];
-};
-const saveTodoToPlanner = (text) => {
-  const d = todayStr();
-  const existing = ls.get(`planner_todos_${d}`, []);
-  if (!existing.find(t => t.text === text))
-    ls.set(`planner_todos_${d}`, [...existing, { text, done: false, stars: 0 }]);
-};
-const syncDoneToPlanner = (text, done) => {
-  const d = todayStr();
-  const existing = ls.get(`planner_todos_${d}`, []);
-  ls.set(`planner_todos_${d}`, existing.map(t => t.text === text ? { ...t, done } : t));
-};
+const PUBLISH_CHANNELS = [
+  { key: 'youtube', icon: '▶️', label: 'YouTube 쇼츠' },
+  { key: 'blog', icon: '📝', label: '블로그' },
+  { key: 'x', icon: '𝕏', label: 'X 스레드' },
+];
 
-// ════ 메인 앱 (v6.0: 개인 루틴 전용 — 사업 탭·AI 호출 제거) ════
+const BLOG_CATEGORIES = ['사설 해설', '정치 분석', '팩트체크', '시사 논평'];
+
+const SERIES = [
+  { id: 'editorial', name: '사설을 벤다', icon: '✂️', desc: '보수 언론 사설 비판', color: '#C53030' },
+  { id: 'statement', name: '발언을 벤다', icon: '🎤', desc: '정치인 발언 팩트체크', color: '#D69E2E' },
+  { id: 'factline', name: '팩트 한 줄', icon: '📌', desc: '쇼츠 한 줄 팩트 + 반전', color: '#3182CE' },
+  { id: 'monthly', name: '월간 총정리', icon: '📅', desc: '한 달 정치 총정리', color: '#805AD5' },
+  { id: 'free', name: '자유 분석', icon: '🔪', desc: '주제 자유 선택', color: '#C53030' },
+];
+
+function LoadingDots() {
+  const [dots, setDots] = useState('');
+  useEffect(() => {
+    const t = setInterval(() => setDots(d => d.length >= 3 ? '' : d + '.'), 400);
+    return () => clearInterval(t);
+  }, []);
+  return <span>{dots}</span>;
+}
+
+function pollJob(jobId, onUpdate, onDone, onError) {
+  const poll = setInterval(async () => {
+    try {
+      const r = await fetch(`${PIPELINE_URL}/api/status/${jobId}`);
+      const j = await r.json();
+      onUpdate(j);
+      if (j.status === 'done' || j.status === 'review' || j.status === 'thumbnail_select') {
+        clearInterval(poll);
+        onDone(j);
+      } else if (j.status === 'error') {
+        clearInterval(poll);
+        onError(j.error);
+      }
+    } catch (e) { clearInterval(poll); onError('서버 연결 끊김'); }
+  }, 1500);
+}
+
 export default function App() {
-  const [tab, setTab] = useState("planner");
-  const [gcalEvents, setGcalEvents] = useState([]);
-  const [gcalToken, setGcalToken] = useState(() => {
-    return sessionStorage.getItem("gtoken") || null;
-  });
-  const handleTokenChange = (t) => {
-    setGcalToken(t);
-    if (t) sessionStorage.setItem("gtoken", t);
-    else sessionStorage.removeItem("gtoken");
-  };
-  const [todos, setTodos] = useState([]);
+  const [topic, setTopic] = useState('');
+  const [context, setContext] = useState('');
+  const [selectedPaper, setSelectedPaper] = useState(null);
+  const [serverOnline, setServerOnline] = useState(null);
+  const [publishChannels, setPublishChannels] = useState({ youtube: true, blog: true, x: true });
+  const [blogCategory, setBlogCategory] = useState('사설 해설');
 
-  const tabs = [
-    { id:"planner",   icon:<Ic n="pdf" s={18}/>, label:"플래너" },
-    { id:"calendar",  icon:<Ic n="cal" s={18}/>, label:"캘린더" },
-    { id:"backup",    icon:<Ic n="cloud" s={18}/>, label:"백업" },
-  ];
+  const BLOG_CATEGORIES = ['사설 해설', '정치 분석', '경제 정책', '칼럼'];
+  const inputRef = useRef(null);
+
+  const [pipeStep, setPipeStep] = useState('idle');
+  const [pipeMsg, setPipeMsg] = useState('');
+  const [editTitle, setEditTitle] = useState('');
+  const [editScript, setEditScript] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [pipeResult, setPipeResult] = useState(null);
+  const [pipeError, setPipeError] = useState('');
+  const [thumbCandidates, setThumbCandidates] = useState([]);
+  const [videoData, setVideoData] = useState(null);
+
+  // ── 배경 이미지 상태 ──
+  const [bgImage1, setBgImage1] = useState(null);
+  const [bgImage2, setBgImage2] = useState(null);
+  const [bgImage1Name, setBgImage1Name] = useState('');
+  const [bgImage2Name, setBgImage2Name] = useState('');
+
+  // ── 시리즈 상태 ──
+  const [selectedSeries, setSelectedSeries] = useState('free');
+
+  // ── 브리핑 상태 ──
+  const [briefingData, setBriefingData] = useState(null);
+  const [briefingLoading, setBriefingLoading] = useState(false);
+  const [briefingError, setBriefingError] = useState('');
+  const [briefingDates, setBriefingDates] = useState([]);
+  const [selectedBriefingDate, setSelectedBriefingDate] = useState('');
+
+  const fetchBriefing = async (date = '') => {
+    try {
+      const url = date
+        ? `${PIPELINE_URL}/api/briefing?date=${date}`
+        : `${PIPELINE_URL}/api/briefing`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.briefing) {
+        setBriefingData(data.briefing);
+        setBriefingError('');
+      } else {
+        setBriefingError(data.error || '브리핑이 없습니다.');
+      }
+    } catch { setBriefingError('서버 연결 실패'); }
+  };
+
+  const fetchBriefingDates = async () => {
+    try {
+      const res = await fetch(`${PIPELINE_URL}/api/briefings`);
+      const data = await res.json();
+      setBriefingDates(data.dates || []);
+    } catch {}
+  };
+
+  const runBriefing = async () => {
+    setBriefingLoading(true);
+    setBriefingError('');
+    try {
+      const res = await fetch(`${PIPELINE_URL}/api/briefing/run`, { method: 'POST' });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      pollJob(data.job_id,
+        (j) => setBriefingError(j.step || '실행 중...'),
+        (j) => { setBriefingData(j.result?.briefing); setBriefingLoading(false); setBriefingError(''); },
+        (err) => { setBriefingLoading(false); setBriefingError(err); },
+      );
+    } catch (err) { setBriefingLoading(false); setBriefingError(err.message); }
+  };
+
+  const useBriefingIssue = (issue, attackData, defenseData) => {
+    const topicText = issue.title || '';
+    const contextParts = [];
+    if (issue.summary) contextParts.push(`[뉴스 요약]\n${issue.summary}`);
+    if (issue.conservative_frame) contextParts.push(`[보수 프레이밍]\n${issue.conservative_frame}`);
+    if (issue.progressive_frame) contextParts.push(`[진보 프레이밍]\n${issue.progressive_frame}`);
+    if (attackData) {
+      if (attackData.frame_intent) contextParts.push(`[프레임 의도]\n${attackData.frame_intent}`);
+      if (attackData.counter_attack) contextParts.push(`[역공 포인트]\n${attackData.counter_attack}`);
+      if (attackData.bluntedge_oneliner) contextParts.push(`[BE 한 줄]\n${attackData.bluntedge_oneliner}`);
+    }
+    if (defenseData) {
+      if (defenseData.government_position) contextParts.push(`[정부 입장]\n${defenseData.government_position}`);
+      if (defenseData.counter_narrative) contextParts.push(`[대안 내러티브]\n${defenseData.counter_narrative}`);
+    }
+    setTopic(topicText);
+    setContext(contextParts.join('\n\n'));
+    setActiveTab('shorts');
+  };
+
+  // ── 썸네일 편집 상태 ──
+  const [editableThumbTexts, setEditableThumbTexts] = useState([]);
+
+  // ── 인포그래픽 (첫 화면 = 썸네일, 마지막 = 요약) ──
+  const [igInfo, setIgInfo] = useState(null);
+  const [igPreviews, setIgPreviews] = useState([]);
+  const [igSummary, setIgSummary] = useState('');
+  const [igTs, setIgTs] = useState(0);
+  const [igBusy, setIgBusy] = useState(false);
+  const mediaUrl = (p) => `${PIPELINE_URL}/api/media?path=${encodeURIComponent(p || '')}&t=${igTs}`;
+  const setIgField = (k, v) => setIgInfo(x => ({ ...(x || {}), [k]: v }));
+  const refreshInfographic = async () => {
+    if (!igInfo || !videoData) return;
+    setIgBusy(true);
+    try {
+      const d = await (await fetch(`${PIPELINE_URL}/api/infographic/preview`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ output_dir: videoData.output_dir, infographic: igInfo, texts: editableThumbTexts, title: videoData.title }),
+      })).json();
+      if (d.error) throw new Error(d.error);
+      setIgPreviews(d.previews || []); setIgSummary(d.summary || ''); setIgTs(Date.now());
+    } catch (e) { alert(`시안 갱신 실패: ${e.message}`); }
+    setIgBusy(false);
+  };
+
+  // ── 탭 & 롱폼 상태 ──
+  const [activeTab, setActiveTab] = useState('shorts'); // 'shorts' | 'longform'
+  const [lfTitle, setLfTitle] = useState('');
+  const [lfIntro, setLfIntro] = useState('');
+  const [lfClips, setLfClips] = useState([
+    { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: true },
+    { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: false },
+    { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: false },
+    { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: false },
+    { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: false },
+  ]);
+  const [lfPublish, setLfPublish] = useState({ youtube: true, blog: true, x: true });
+  const [lfBlogCategory, setLfBlogCategory] = useState('정치 분석');
+  const [lfStep, setLfStep] = useState('idle'); // idle | rendering | done | error
+  const [lfMsg, setLfMsg] = useState('');
+  const [lfResult, setLfResult] = useState(null);
+  const [lfError, setLfError] = useState('');
+
+  // ── 타입4 (브리핑 기반 롱폼) ──
+  const [lfMode, setLfMode] = useState('t4'); // 't4' 브리핑 기반 | 'manual' 수동 클립(기존)
+  const [t4Preset, setT4Preset] = useState(null); // { date, rank }
+  const briefingFileDate = () =>
+    selectedBriefingDate || (briefingData?.date || '').slice(0, 10).replace(/-/g, '');
+  const openT4 = (rank = null) => {
+    setT4Preset({ date: briefingFileDate(), rank });
+    setLfMode('t4');
+    setActiveTab('longform');
+  };
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => {
+    fetch(`${PIPELINE_URL}/api/health`)
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(() => setServerOnline(true))
+      .catch(() => setServerOnline(false));
+  }, []);
+  useEffect(() => {
+    if (activeTab === 'briefing' && serverOnline) {
+      if (!briefingData) fetchBriefing();
+      fetchBriefingDates();
+    }
+  }, [activeTab, serverOnline]);
+
+  const isEditorial = !!selectedPaper;
+  const accentColor = isEditorial ? (selectedPaper?.color || '#C53030') : '#C53030';
+  const modeName = isEditorial ? '신문사설 해설자' : 'BluntEdge';
+  const hasAnyChannel = publishChannels.youtube || publishChannels.blog || publishChannels.x;
+
+  // Step 1: 스크립트 생성 (브라우저 → Claude API 직접 호출, 로컬 서버 불필요)
+  const startScriptGeneration = async () => {
+    if (!topic.trim()) return;
+    setPipeStep('scripting');
+    setPipeMsg('스크립트 생성 중...');
+    setPipeResult(null);
+    setPipeError('');
+
+    let finalTopic = topic;
+    let finalContext = context;
+
+    // 시리즈 태그 자동 추가
+    const seriesInfo = SERIES.find(s => s.id === selectedSeries);
+    if (seriesInfo && seriesInfo.id !== 'free') {
+      finalTopic = `[${seriesInfo.name}] ${topic}`;
+    }
+
+    if (isEditorial && selectedPaper) {
+      finalTopic = `[${selectedPaper.name} 사설 분석] ${topic}`;
+
+      const isConservative = selectedPaper.stance === 'conservative';
+      finalContext = isConservative
+        ? `[출처: ${selectedPaper.name} 사설]
+${context}
+
+[핵심 지시 — 반드시 따를 것]
+${selectedPaper.name}은 보수 언론이다. 이 사설을 BluntEdge의 중도 진보 관점에서 비판적으로 해체하라.
+- 이 사설이 설정한 프레임(논조, 전제, 결론 유도)을 찾아내고, 그 프레이밍의 의도를 폭로하라.
+- 사설이 주장하는 결론에 동조하지 마라. 같은 팩트라도 BluntEdge는 반대 해석을 내려야 한다.
+- 사설이 빠뜨린 팩트, 축소한 맥락, 과장한 부분을 짚어라.
+- "이 사설의 진짜 의도는 ~다"라는 식으로 숨겨진 목적을 드러내라.
+- 어조: 냉소적이고 날카롭게. 사설의 논리를 조목조목 반박하라.
+- 절대로 이 사설의 논조에 동의하거나 수긍하는 문장을 쓰지 마라.`
+        : `[출처: ${selectedPaper.name} 사설]
+${context}
+
+[지시] 이 사설을 BluntEdge 관점에서 분석하는 스크립트를 만들어줘.`;
+    }
+
+    try {
+      const result = await generateContent('youtube', finalTopic, finalContext);
+
+      // 제목 추출
+      let title = finalTopic;
+      const titleMatch = result.match(/(?:제목|타이틀|##\s*)[:：]?\s*(.+)/m);
+      if (titleMatch) title = titleMatch[1].replace(/[*#"]/g, '').trim();
+
+      // 3줄 요약 추출
+      let description = `${title} — BluntEdge 분석`;
+      const descMatch = result.match(/(?:요약|3줄\s*요약|설명)[:：]?\s*([\s\S]*?)(?:\n\n|$)/i);
+      if (descMatch) description = descMatch[1].trim();
+
+      setEditTitle(title);
+      setEditScript(result);
+      setEditDesc(description);
+      setPipeStep('review');
+    } catch (err) { setPipeStep('error'); setPipeError(err.message); }
+  };
+
+  // Step 2: 영상 생성
+  const startVideoGeneration = async () => {
+    setPipeStep('rendering');
+    setPipeMsg('음성 생성 중...');
+
+    const formData = new FormData();
+    formData.append('title', editTitle.trim());
+    formData.append('script', editScript.trim());
+    formData.append('description', editDesc.trim());
+    if (isEditorial && selectedPaper) {
+      formData.append('newspaper_name', selectedPaper.name);
+      formData.append('newspaper_color', selectedPaper.color);
+    }
+    if (bgImage1) formData.append('bg_image_1', bgImage1);
+    if (bgImage2) formData.append('bg_image_2', bgImage2);
+    formData.append('series', selectedSeries);
+
+    try {
+      const res = await fetch(`${PIPELINE_URL}/api/video`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      pollJob(data.job_id,
+        (j) => setPipeMsg(j.step || ''),
+        (j) => {
+          if (j.status === 'thumbnail_select' && j.result) {
+            const candidates = j.result.thumbnail_candidates || [];
+            setThumbCandidates(candidates);
+            setEditableThumbTexts([...candidates]);
+            setIgInfo(j.result.infographic || null);
+            setIgPreviews(j.result.thumbnail_previews || []);
+            setIgSummary(j.result.summary_preview || '');
+            setIgTs(Date.now());
+            setVideoData({
+              video_path: j.result.video_path,
+              output_dir: j.result.output_dir,
+              title: j.result.title,
+              script: j.result.script,
+              description: j.result.description,
+            });
+            setPipeStep('thumbnail');
+          } else if (j.status === 'done') {
+            setPipeStep('done');
+            setPipeResult(j.result);
+          }
+        },
+        (err) => { setPipeStep('error'); setPipeError(err); },
+      );
+    } catch (err) { setPipeStep('error'); setPipeError(err.message); }
+  };
+
+  // Step 3: 썸네일 선택 → 발행
+  const startUpload = async (selectedThumbText) => {
+    if (!videoData) return;
+    setPipeStep('uploading');
+    setPipeMsg('콘텐츠 발행 중...');
+
+    try {
+      const res = await fetch(`${PIPELINE_URL}/api/upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: videoData.title,
+          script: videoData.script,
+          description: videoData.description,
+          video_path: videoData.video_path,
+          output_dir: videoData.output_dir,
+          thumbnail_text: selectedThumbText,
+          publish_youtube: publishChannels.youtube,
+          publish_blog: publishChannels.blog,
+          publish_x: publishChannels.x,
+          blog_category: blogCategory,
+          infographic: igInfo,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      pollJob(data.job_id,
+        (j) => setPipeMsg(j.step || ''),
+        (j) => { setPipeStep('done'); setPipeResult(j.result); },
+        (err) => { setPipeStep('error'); setPipeError(err); },
+      );
+    } catch (err) { setPipeStep('error'); setPipeError(err.message); }
+  };
+
+  const resetPipeline = () => {
+    setPipeStep('idle');
+    setPipeMsg('');
+    setPipeResult(null);
+    setPipeError('');
+    setThumbCandidates([]);
+    setEditableThumbTexts([]);
+    setIgInfo(null); setIgPreviews([]); setIgSummary('');
+    setVideoData(null);
+    setBgImage1(null);
+    setBgImage2(null);
+    setBgImage1Name('');
+    setBgImage2Name('');
+  };
+
+  const resetAll = () => {
+    resetPipeline();
+    setTopic('');
+    setContext('');
+    setSelectedPaper(null);
+  };
+
+  // ── 롱폼 헬퍼 함수들 ──
+  const updateClip = (index, field, value) => {
+    setLfClips(prev => prev.map((c, i) => i === index ? { ...c, [field]: value } : c));
+  };
+
+  const toggleClipExpand = (index) => {
+    setLfClips(prev => prev.map((c, i) => i === index ? { ...c, expanded: !c.expanded } : c));
+  };
+
+  const handleVideoUpload = (index, file) => {
+    if (file && file.type.startsWith('video/')) {
+      updateClip(index, 'videoFile', file);
+      updateClip(index, 'videoName', file.name);
+    }
+  };
+
+  const lfFilledClips = lfClips.filter(c => c.speaker.trim() || c.commentary.trim());
+  const lfHasAnyChannel = lfPublish.youtube || lfPublish.blog || lfPublish.x;
+  const lfReady = lfTitle.trim() && lfFilledClips.length > 0 && lfFilledClips.every(c => c.videoFile) && lfHasAnyChannel && serverOnline;
+
+  const startLongformGeneration = async () => {
+    if (!lfReady) return;
+    setLfStep('rendering');
+    setLfMsg('롱폼 영상 합성 준비 중...');
+    setLfResult(null);
+    setLfError('');
+
+    const formData = new FormData();
+    formData.append('title', lfTitle.trim());
+    formData.append('intro_text', lfIntro.trim());
+    formData.append('publish_youtube', lfPublish.youtube ? 'true' : 'false');
+    formData.append('publish_blog', lfPublish.blog ? 'true' : 'false');
+    formData.append('publish_x', lfPublish.x ? 'true' : 'false');
+    formData.append('blog_category', lfBlogCategory);
+
+    lfFilledClips.forEach((clip, idx) => {
+      const i = idx + 1;
+      formData.append(`clip${i}_speaker`, clip.speaker);
+      formData.append(`clip${i}_subtitle`, clip.subtitle);
+      formData.append(`clip${i}_commentary`, clip.commentary);
+      formData.append(`clip${i}_video`, clip.videoFile);
+    });
+
+    try {
+      const res = await fetch(`${PIPELINE_URL}/api/longform`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      pollJob(data.job_id,
+        (j) => setLfMsg(j.step || ''),
+        (j) => { setLfStep('done'); setLfResult(j.result); },
+        (err) => { setLfStep('error'); setLfError(err); },
+      );
+    } catch (err) { setLfStep('error'); setLfError(err.message); }
+  };
+
+  const resetLongform = () => {
+    setLfStep('idle');
+    setLfMsg('');
+    setLfResult(null);
+    setLfError('');
+    setLfTitle('');
+    setLfIntro('');
+    setLfClips([
+      { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: true },
+      { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: false },
+      { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: false },
+      { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: false },
+      { speaker: '', subtitle: '', commentary: '', videoFile: null, videoName: '', expanded: false },
+    ]);
+  };
 
   return (
-    <div style={{ display:"flex",flexDirection:"column",height:"100dvh",background:C.bg,fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif",color:C.text,overflow:"hidden" }}>
-      <div style={{ background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,paddingTop:"calc(10px + env(safe-area-inset-top,0px))" }}>
-        <div style={{ display:"flex",alignItems:"center",gap:10 }}>
-          <svg width="36" height="22" viewBox="0 0 120 70" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M5 40 C15 25, 25 25, 35 35 C45 45, 50 45, 55 35 C60 25, 65 25, 75 35 C85 45, 90 45, 95 35 C100 25, 110 25, 115 40" stroke="#6B1D2A" strokeWidth="6" strokeLinecap="round" fill="none"/>
-            <path d="M5 50 C15 35, 30 30, 40 40 C50 50, 55 48, 60 38 C65 28, 70 28, 80 38 C90 48, 95 48, 105 38 C110 30, 115 35, 115 45" stroke="#8B3040" strokeWidth="5" strokeLinecap="round" fill="none" opacity="0.7"/>
-            <path d="M20 45 C30 30, 40 32, 50 42 C55 47, 60 45, 65 38 C70 31, 80 30, 90 40 C95 45, 100 42, 108 35" stroke="#A04050" strokeWidth="4" strokeLinecap="round" fill="none" opacity="0.5"/>
-          </svg>
-          <div>
-            <div style={{ fontSize:14,fontWeight:800,color:"#6B1D2A",letterSpacing:2,lineHeight:1 }}>HANOK</div>
-            <div style={{ fontSize:7,color:C.textDim,letterSpacing:1.5 }}>DAILY ROUTINE</div>
+    <div style={{ minHeight: '100vh', background: '#F0EDEA', fontFamily: "'Pretendard','Noto Sans KR',-apple-system,sans-serif" }}>
+      <style>{`
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+        * { box-sizing:border-box; } textarea:focus,input:focus { outline:none; }
+        ::-webkit-scrollbar { width:4px; } ::-webkit-scrollbar-thumb { background:#CCC; border-radius:4px; }
+      `}</style>
+
+      <div style={{ maxWidth: 600, margin: '0 auto', padding: '0 16px 60px' }}>
+
+        {/* ── Header ── */}
+        <div style={{ padding: '28px 0 20px', textAlign: 'center' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: 'linear-gradient(135deg,#2D2D2D,#555)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, border: '2px solid #C53030' }}>🔪</div>
+            <h1 style={{ fontSize: 22, fontWeight: 900, color: '#1A1A1A', margin: 0, letterSpacing: -0.5 }}>BluntEdge</h1>
+          </div>
+          <p style={{ fontSize: 12, color: '#888', margin: '4px 0 0', fontWeight: 500 }}>정치 콘텐츠 에이전트 · "무딘 척하지만, 벤다."</p>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 12 }}>
+            {Object.entries(CHANNELS).map(([key, ch]) => (
+              <a key={key} href={ch.url} target="_blank" rel="noopener noreferrer" style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 12px', borderRadius: 8,
+                background: `${ch.color}10`, border: `1px solid ${ch.color}25`, fontSize: 11, fontWeight: 600, color: ch.color, textDecoration: 'none',
+              }}><span style={{ fontSize: 13 }}>{ch.icon}</span>{ch.label}</a>
+            ))}
           </div>
         </div>
-        <div style={{ fontSize:10,color:C.textDim,textAlign:"right" }}>
-          {new Date().toLocaleDateString("ko-KR",{month:"short",day:"numeric",weekday:"short"})}
-          <br/><span style={{ color:C.green,fontSize:9 }}>● 온라인</span>
+
+        {/* ── 탭 전환 ── */}
+        <div style={{ display: 'flex', gap: 0, marginBottom: 16, background: '#E5E2DB', borderRadius: 12, padding: 3 }}>
+          {[
+            { key: 'briefing', icon: '📋', label: '브리핑' },
+            { key: 'shorts', icon: '📱', label: '쇼츠' },
+            { key: 'longform', icon: '🎬', label: '롱폼' },
+          ].map(tab => (
+            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+              style={{
+                flex: 1, padding: '10px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                fontFamily: 'inherit', fontSize: 13, fontWeight: 700, transition: 'all 0.2s',
+                background: activeTab === tab.key ? '#FFF' : 'transparent',
+                color: activeTab === tab.key ? '#C53030' : '#888',
+                boxShadow: activeTab === tab.key ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
+              }}>
+              {tab.icon} {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ══════════════════════════════════════════════
+            브리핑 탭
+        ══════════════════════════════════════════════ */}
+        {activeTab === 'briefing' && <>
+          <div style={{ animation: 'fadeIn 0.3s ease' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 15, fontWeight: 800, color: '#C53030' }}>📋 오늘의 브리핑</span>
+                {briefingDates.length > 1 && (
+                  <select
+                    value={selectedBriefingDate}
+                    onChange={e => {
+                      setSelectedBriefingDate(e.target.value);
+                      fetchBriefing(e.target.value);
+                    }}
+                    style={{
+                      padding: '4px 8px', borderRadius: 6, border: '1px solid #E0DDD6',
+                      fontSize: 11, fontFamily: 'inherit', background: '#FAFAF8', color: '#555',
+                    }}>
+                    <option value="">최신</option>
+                    {briefingDates.map(d => (
+                      <option key={d.date} value={d.date}>{d.display} ({d.issue_count}건)</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <button onClick={() => { runBriefing(); }} disabled={briefingLoading}
+                style={{
+                  padding: '8px 16px', borderRadius: 8, border: 'none',
+                  background: briefingLoading ? '#DDD' : '#C53030', color: '#FFF',
+                  fontSize: 12, fontWeight: 700, cursor: briefingLoading ? 'default' : 'pointer',
+                  fontFamily: 'inherit',
+                }}>
+                {briefingLoading ? '실행 중...' : '🔄 브리핑 실행'}
+              </button>
+            </div>
+
+            {briefingError && !briefingData && (
+              <div style={{ padding: '20px', textAlign: 'center', color: '#888', fontSize: 13 }}>
+                {briefingError}
+              </div>
+            )}
+
+            {briefingData && briefingData.employees && (() => {
+              const news = briefingData.employees['뉴스브리퍼'];
+              const fighter = briefingData.employees['이슈파이터'];
+              const attacker = briefingData.employees['이슈어택커'];
+              const pd = briefingData.employees['롱폼PD'];
+              const issues = news?.issues || [];
+              const defenses = fighter?.defenses || [];
+              const attacks = attacker?.attacks || [];
+
+              return (
+                <div>
+                  {/* 브리핑 날짜 */}
+                  <div style={{ fontSize: 11, color: '#AAA', marginBottom: 12, textAlign: 'center' }}>
+                    {briefingData.date} · AI 직원 4명 보고
+                  </div>
+
+                  {/* 롱폼PD 추천 */}
+                  {pd?.recommendation && (
+                    <div style={{ background: '#C5303010', border: '2px solid #C5303040', borderRadius: 14, padding: '16px', marginBottom: 12 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#C53030', marginBottom: 6 }}>🎬 롱폼PD 추천</div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: '#1A1A1A', marginBottom: 4 }}>{pd.recommendation.title}</div>
+                      <div style={{ fontSize: 12, color: '#555', marginBottom: 8 }}>{pd.recommendation.series} · {pd.recommendation.hook}</div>
+                      {pd.recommendation.thumbnail_ideas && (
+                        <div style={{ fontSize: 11, color: '#888' }}>
+                          썸네일: {pd.recommendation.thumbnail_ideas.join(' / ')}
+                        </div>
+                      )}
+                      <button onClick={() => openT4(null)}
+                        style={{
+                          width: '100%', marginTop: 10, padding: '9px', borderRadius: 8, border: 'none',
+                          background: '#C53030', color: '#FFF', fontSize: 12, fontWeight: 700,
+                          cursor: 'pointer', fontFamily: 'inherit',
+                        }}>
+                        🎬 이 추천으로 심층분석 롱폼 만들기
+                      </button>
+                    </div>
+                  )}
+
+                  {/* 이슈 카드 5건 */}
+                  {issues.map((issue, idx) => {
+                    const attack = attacks.find(a => a.issue_rank === issue.rank) || attacks[idx];
+                    const defense = defenses.find(d => d.issue_rank === issue.rank) || defenses[idx];
+                    return (
+                      <div key={idx} style={{
+                        background: '#FFF', borderRadius: 14, border: '1px solid #E0DDD6',
+                        padding: '16px', marginBottom: 8, transition: 'all 0.2s',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                          <span style={{
+                            width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 11, fontWeight: 800, background: '#C53030', color: '#FFF',
+                          }}>{issue.rank || idx + 1}</span>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: '#1A1A1A', flex: 1 }}>{issue.title}</span>
+                        </div>
+                        <div style={{ fontSize: 12, color: '#555', lineHeight: 1.7, marginBottom: 10 }}>{issue.summary}</div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                          <div style={{ padding: '8px', borderRadius: 8, background: '#FFF5F5', fontSize: 11, lineHeight: 1.6 }}>
+                            <div style={{ fontWeight: 700, color: '#C53030', marginBottom: 4 }}>보수 프레임</div>
+                            {issue.conservative_frame}
+                          </div>
+                          <div style={{ padding: '8px', borderRadius: 8, background: '#F0FFF4', fontSize: 11, lineHeight: 1.6 }}>
+                            <div style={{ fontWeight: 700, color: '#2D8544', marginBottom: 4 }}>진보 프레임</div>
+                            {issue.progressive_frame}
+                          </div>
+                        </div>
+
+                        {attack?.bluntedge_oneliner && (
+                          <div style={{ padding: '8px 12px', borderRadius: 8, background: '#1A1A1A', fontSize: 12, color: '#FFF', fontWeight: 600, marginBottom: 10 }}>
+                            💬 {attack.bluntedge_oneliner}
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button onClick={() => useBriefingIssue(issue, attack, defense)}
+                            style={{
+                              flex: 1, padding: '8px', borderRadius: 8, border: 'none',
+                              background: '#C53030', color: '#FFF', fontSize: 11, fontWeight: 700,
+                              cursor: 'pointer', fontFamily: 'inherit',
+                            }}>
+                            🔪 쇼츠 만들기
+                          </button>
+                          <button onClick={() => openT4(issue.rank || idx + 1)}
+                            style={{
+                              flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #C53030',
+                              background: '#FFF', color: '#C53030', fontSize: 11, fontWeight: 700,
+                              cursor: 'pointer', fontFamily: 'inherit',
+                            }}>
+                            🎬 롱폼 만들기
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* 쇼츠 아이디어 */}
+                  {pd?.shorts_ideas && pd.shorts_ideas.length > 0 && (
+                    <div style={{ background: '#FFF', borderRadius: 14, padding: '16px', border: '1px solid #E0DDD6', marginTop: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 8 }}>📌 쇼츠 아이디어</div>
+                      {pd.shorts_ideas.map((s, i) => (
+                        <div key={i} style={{ fontSize: 12, color: '#555', padding: '6px 0', borderBottom: '1px solid #F0F0F0' }}>
+                          <strong>{s.title}</strong>: {s.oneliner}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 서버 상태 */}
+                  {serverOnline === false && (
+                    <div style={{ marginTop: 12, padding: '12px', borderRadius: 10, background: '#FFF5F5', border: '1px solid #FED7D7', fontSize: 12, color: '#C53030' }}>
+                      ⚠️ 로컬 서버가 꺼져 있습니다. python server.py 실행 후 새로고침하세요.
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        </>}
+
+        {/* ══════════════════════════════════════════════
+            쇼츠 탭
+        ══════════════════════════════════════════════ */}
+        {activeTab === 'shorts' && <>
+
+        {/* ══════════ 입력 영역 (idle 상태) ══════════ */}
+        {pipeStep === 'idle' && (
+          <div style={{ animation: 'fadeIn 0.3s ease' }}>
+
+            {/* 모드 표시 */}
+            <div style={{ textAlign: 'center', marginBottom: 12 }}>
+              <span style={{
+                display: 'inline-block', padding: '4px 16px', borderRadius: 20,
+                background: isEditorial ? `${accentColor}15` : '#2D2D2D10',
+                border: `1px solid ${isEditorial ? accentColor : '#2D2D2D'}30`,
+                fontSize: 12, fontWeight: 700,
+                color: isEditorial ? accentColor : '#2D2D2D',
+              }}>
+                {isEditorial
+                  ? (selectedPaper?.stance === 'conservative'
+                    ? `🔪 ${selectedPaper.name} 사설 비판`
+                    : `📰 ${selectedPaper.name} 사설 해설`)
+                  : '🔪 BluntEdge 자유 분석'}
+              </span>
+            </div>
+
+            {/* 시리즈 선택 */}
+            <div style={{ background: '#FFF', borderRadius: 14, padding: '16px', border: '1px solid #E0DDD6', marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 10 }}>🔪 시리즈 선택</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {SERIES.map(s => (
+                  <button key={s.id} onClick={() => {
+                    setSelectedSeries(s.id);
+                    if (s.id === 'editorial' && !selectedPaper) {
+                      // 사설을 벤다 → 신문사 선택 유도
+                    }
+                  }}
+                    style={{
+                      flex: '1 1 auto', minWidth: 80, padding: '10px 8px', borderRadius: 10, cursor: 'pointer',
+                      fontFamily: 'inherit', fontSize: 12, fontWeight: 700, transition: 'all 0.2s',
+                      background: selectedSeries === s.id ? `${s.color}15` : '#FAFAF8',
+                      border: selectedSeries === s.id ? `2px solid ${s.color}` : '1.5px solid #E0DDD6',
+                      color: selectedSeries === s.id ? s.color : '#999',
+                      textAlign: 'center',
+                    }}>
+                    <div style={{ fontSize: 18 }}>{s.icon}</div>
+                    <div style={{ marginTop: 2 }}>{s.name}</div>
+                    <div style={{ fontSize: 9, fontWeight: 400, color: '#AAA', marginTop: 2 }}>{s.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 신문사 선택 */}
+            <div style={{ background: '#FFF', borderRadius: 14, padding: '16px', border: '1px solid #E0DDD6', marginBottom: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#555' }}>📰 신문사 선택 <span style={{ fontWeight: 400, color: '#AAA' }}>(선택하면 사설 해설 모드)</span></span>
+                {selectedPaper && (
+                  <button onClick={() => setSelectedPaper(null)}
+                    style={{ fontSize: 11, color: '#999', background: 'none', border: '1px solid #DDD', borderRadius: 6, padding: '2px 8px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    선택 해제
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6 }}>
+                {NEWSPAPERS.map(p => (
+                  <button key={p.id} onClick={() => { setSelectedPaper(selectedPaper?.id === p.id ? null : p); window.open(p.url, '_blank'); }}
+                    style={{
+                      padding: '10px 6px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
+                      background: selectedPaper?.id === p.id ? `${p.color}15` : '#FAFAF8',
+                      border: selectedPaper?.id === p.id ? `2px solid ${p.color}` : '1px solid #EDE9E0',
+                      fontSize: 11, fontWeight: 700, textAlign: 'center',
+                      color: selectedPaper?.id === p.id ? p.color : '#666',
+                      transition: 'all 0.2s',
+                    }}>
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 주제 + 맥락 입력 */}
+            <div style={{ background: '#FFF', borderRadius: 14, padding: '20px', border: '1px solid #E0DDD6', marginBottom: 12 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 8, display: 'block' }}>
+                {isEditorial ? '📰 사설 제목' : '📰 오늘의 이슈'}
+              </label>
+              <input ref={inputRef} value={topic} onChange={e => setTopic(e.target.value)}
+                placeholder={isEditorial ? '사설 제목을 입력하세요...' : '예: 국회 예산안 강행 처리, 한미 정상회담...'}
+                style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid #E0DDD6', fontSize: 14, fontFamily: 'inherit', background: '#FAFAF8', color: '#1A1A1A' }}
+                onFocus={e => e.target.style.borderColor = accentColor} onBlur={e => e.target.style.borderColor = '#E0DDD6'}
+              />
+              <label style={{ fontSize: 12, fontWeight: 700, color: '#555', marginTop: 14, marginBottom: 8, display: 'block' }}>
+                {isEditorial ? '📎 사설 본문 붙여넣기' : '📎 추가 맥락 (선택)'}
+              </label>
+              <textarea value={context} onChange={e => setContext(e.target.value)}
+                placeholder={isEditorial ? '사설 본문을 복사해서 붙여넣으세요...' : '관련 기사, 핵심 수치, 배경 정보 등...'}
+                rows={isEditorial ? 6 : 3}
+                style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid #E0DDD6', fontSize: 13, fontFamily: 'inherit', background: '#FAFAF8', color: '#1A1A1A', resize: 'vertical', lineHeight: 1.7 }}
+                onFocus={e => e.target.style.borderColor = accentColor} onBlur={e => e.target.style.borderColor = '#E0DDD6'}
+              />
+            </div>
+
+            {/* 발행 채널 선택 */}
+            <div style={{ background: '#FFF', borderRadius: 14, padding: '16px', border: '1px solid #E0DDD6', marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 10 }}>📢 발행 채널 선택</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {PUBLISH_CHANNELS.map(ch => (
+                  <label key={ch.key} style={{
+                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    padding: '10px 8px', borderRadius: 10, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                    background: publishChannels[ch.key] ? '#C5303012' : '#FAFAF8',
+                    border: publishChannels[ch.key] ? '2px solid #C53030' : '1.5px solid #E0DDD6',
+                    color: publishChannels[ch.key] ? '#C53030' : '#AAA',
+                    transition: 'all 0.2s',
+                  }}>
+                    <input type="checkbox" checked={publishChannels[ch.key]}
+                      onChange={e => setPublishChannels(p => ({ ...p, [ch.key]: e.target.checked }))}
+                      style={{ accentColor: '#C53030', display: 'none' }} />
+                    <span style={{ fontSize: 16 }}>{ch.icon}</span>
+                    <span>{ch.label}</span>
+                    {publishChannels[ch.key] && <span style={{ fontSize: 14 }}>✓</span>}
+                  </label>
+                ))}
+              </div>
+              {publishChannels.x && (
+                <div style={{ marginTop: 8, fontSize: 10, color: '#888', textAlign: 'center' }}>
+                  𝕏 텍스트 전용 스레드 (URL 미포함 시 건당 ~21원)
+                </div>
+              )}
+
+              {/* 블로그 카테고리 선택 */}
+              {publishChannels.blog && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 6 }}>📂 블로그 카테고리</div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {BLOG_CATEGORIES.map(cat => (
+                      <button key={cat} onClick={() => setBlogCategory(cat)}
+                        style={{
+                          flex: 1, padding: '7px 4px', borderRadius: 7, fontSize: 11, fontWeight: 600,
+                          cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.2s',
+                          background: blogCategory === cat ? '#C5303015' : '#FAFAF8',
+                          border: blogCategory === cat ? '1.5px solid #C53030' : '1px solid #E0DDD6',
+                          color: blogCategory === cat ? '#C53030' : '#999',
+                        }}>
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 생성 버튼 */}
+            <button onClick={startScriptGeneration}
+              disabled={!topic.trim() || !hasAnyChannel || !serverOnline}
+              style={{
+                width: '100%', padding: '14px', borderRadius: 12, border: 'none',
+                background: topic.trim() && hasAnyChannel && serverOnline
+                  ? `linear-gradient(135deg, ${accentColor}, ${accentColor}CC)` : '#DDD',
+                color: topic.trim() && hasAnyChannel && serverOnline ? '#FFF' : '#999',
+                fontSize: 15, fontWeight: 800, cursor: topic.trim() && hasAnyChannel && serverOnline ? 'pointer' : 'default',
+                fontFamily: 'inherit', transition: 'all 0.2s',
+                letterSpacing: -0.3,
+              }}>
+              {isEditorial
+                ? (selectedPaper?.stance === 'conservative' ? '🔪 사설 비판 콘텐츠 생성' : '📰 사설 해설 콘텐츠 생성')
+                : '🔪 BluntEdge 콘텐츠 생성'}
+            </button>
+
+            {/* 서버 상태 */}
+            {serverOnline === false && (
+              <div style={{ marginTop: 8, padding: '12px', borderRadius: 10, background: '#FFF5F5', border: '1px solid #FED7D7', fontSize: 12, color: '#C53030', lineHeight: 1.6 }}>
+                ⚠️ 로컬 서버가 꺼져 있습니다. 아래 명령어를 복사해서 명령 프롬프트에 붙여넣으세요.
+                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                  <code style={{ flex: 1, background: '#1A1A1A', color: '#00FF41', padding: '10px 12px', borderRadius: 8, fontSize: 11, fontFamily: 'monospace', display: 'block', lineHeight: 1.5 }}>
+                    cd C:\bluntedge-pipeline-v1.0\bluntedge-pipeline && python server.py
+                  </code>
+                  <button onClick={() => {
+                    navigator.clipboard.writeText('cd C:\\bluntedge-pipeline-v1.0\\bluntedge-pipeline && python server.py');
+                    const btn = document.getElementById('copy-cmd-btn');
+                    if (btn) { btn.textContent = '✓'; setTimeout(() => { btn.textContent = '📋'; }, 1500); }
+                  }}
+                    id="copy-cmd-btn"
+                    style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #C53030', background: '#FFF', color: '#C53030', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                    📋
+                  </button>
+                </div>
+              </div>
+            )}
+            {serverOnline === true && (
+              <div style={{ marginTop: 6, fontSize: 10, color: '#2D8544', textAlign: 'center' }}>● 파이프라인 서버 연결됨</div>
+            )}
+          </div>
+        )}
+
+        {/* ══════════ 스크립트 검토 ══════════ */}
+        {pipeStep === 'review' && (
+          <div style={{ background: '#FFF', borderRadius: 14, padding: '20px', border: `2px solid ${accentColor}`, marginBottom: 16, animation: 'fadeIn 0.4s ease' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: accentColor }}>
+                📝 {modeName} 스크립트 검토
+              </div>
+              <span style={{ fontSize: 11, color: '#888', background: '#F5F3EE', padding: '3px 10px', borderRadius: 6 }}>수정 가능</span>
+            </div>
+
+            <label style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 6, display: 'block' }}>제목</label>
+            <input value={editTitle} onChange={e => setEditTitle(e.target.value)}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #E0DDD6', fontSize: 14, fontFamily: 'inherit', marginBottom: 12 }} />
+
+            <label style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 6, display: 'block' }}>나레이션 스크립트</label>
+            <textarea value={editScript} onChange={e => setEditScript(e.target.value)} rows={8}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #E0DDD6', fontSize: 13, fontFamily: 'inherit', lineHeight: 1.7, marginBottom: 12, resize: 'vertical' }} />
+
+            <label style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 6, display: 'block' }}>영상 설명</label>
+            <textarea value={editDesc} onChange={e => setEditDesc(e.target.value)} rows={4}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #E0DDD6', fontSize: 13, fontFamily: 'inherit', lineHeight: 1.7, marginBottom: 14, resize: 'vertical' }} />
+
+            {/* 배경 이미지 업로드 */}
+            <label style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 8, display: 'block' }}>
+              🖼️ 배경 이미지 <span style={{ fontWeight: 400, color: '#AAA' }}>(선택 · 2장 업로드 시 전반부/후반부 배경)</span>
+            </label>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              {[
+                { file: bgImage1, name: bgImage1Name, setter: setBgImage1, nameSetter: setBgImage1Name, label: '전반부', id: 'bg-img-1' },
+                { file: bgImage2, name: bgImage2Name, setter: setBgImage2, nameSetter: setBgImage2Name, label: '후반부', id: 'bg-img-2' },
+              ].map(slot => (
+                <div key={slot.id} style={{ flex: 1 }}>
+                  <div
+                    onClick={() => document.getElementById(slot.id).click()}
+                    style={{
+                      padding: '14px 8px', borderRadius: 10,
+                      border: slot.file ? '2px solid #2D8544' : '1.5px dashed #E0DDD6',
+                      background: slot.file ? '#F0FFF4' : '#FAFAF8',
+                      textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s',
+                    }}>
+                    <input id={slot.id} type="file" accept="image/*" style={{ display: 'none' }}
+                      onChange={e => {
+                        const f = e.target.files[0];
+                        if (f) { slot.setter(f); slot.nameSetter(f.name); }
+                      }} />
+                    {slot.file ? (
+                      <div>
+                        <div style={{ fontSize: 11, color: '#2D8544', fontWeight: 600 }}>✓ {slot.label}</div>
+                        <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>{slot.name}</div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 11, color: '#AAA' }}>📁 {slot.label} 이미지</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* 선택된 채널 표시 */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+              {PUBLISH_CHANNELS.filter(ch => publishChannels[ch.key]).map(ch => (
+                <span key={ch.key} style={{
+                  padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                  background: '#C5303012', color: '#C53030', border: '1px solid #C5303030',
+                }}>{ch.icon} {ch.label}</span>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={startVideoGeneration}
+                style={{ flex: 2, padding: '12px', borderRadius: 10, border: 'none',
+                  background: `linear-gradient(135deg, ${accentColor}, ${accentColor}CC)`,
+                  color: '#FFF', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                🎬 콘텐츠 만들기
+              </button>
+              <button onClick={resetAll}
+                style={{ flex: 1, padding: '12px', borderRadius: 10, border: '1px solid #E0DDD6',
+                  background: '#FFF', color: '#777', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                취소
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ══════════ 진행 중 ══════════ */}
+        {(pipeStep === 'scripting' || pipeStep === 'rendering' || pipeStep === 'uploading') && (
+          <div style={{ textAlign: 'center', padding: '50px 0', animation: 'fadeIn 0.3s ease' }}>
+            <div style={{ fontSize: 42, marginBottom: 14, animation: 'pulse 1.5s infinite' }}>
+              {pipeStep === 'scripting' ? '📝' : pipeStep === 'uploading' ? '📤' : '🎬'}
+            </div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: '#555' }}>{pipeMsg}<LoadingDots /></div>
+            <div style={{ fontSize: 11, color: '#AAA', marginTop: 8 }}>{modeName} 모드</div>
+          </div>
+        )}
+
+        {/* ══════════ 썸네일 선택 ══════════ */}
+        {pipeStep === 'thumbnail' && thumbCandidates.length > 0 && (
+          <div style={{ background: '#FFF', borderRadius: 14, padding: '20px', border: `2px solid ${accentColor}`, marginBottom: 16, animation: 'fadeIn 0.4s ease' }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: accentColor, marginBottom: 6 }}>🖼️ 썸네일 = 첫 화면 선택</div>
+            <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>고른 시안이 썸네일과 영상 첫 1.5초에 똑같이 들어갑니다. 문구를 고친 뒤 ↻로 다시 그려 확인하세요.</div>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+              {PUBLISH_CHANNELS.filter(ch => publishChannels[ch.key]).map(ch => (
+                <span key={ch.key} style={{
+                  padding: '3px 8px', borderRadius: 5, fontSize: 10, fontWeight: 600,
+                  background: '#C5303012', color: '#C53030',
+                }}>{ch.icon} {ch.label}</span>
+              ))}
+            </div>
+            {/* 인포그래픽: 숫자·요약 확인/수정 */}
+            {igInfo && (
+              <div style={{ background: '#FAFAF8', border: '1px solid #E0DDD6', borderRadius: 10, padding: 12, marginBottom: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 8 }}>
+                  📊 인포그래픽 확인 <span style={{ fontWeight: 400, color: '#AAA' }}>(스크립트에 있는 숫자만 자동 추출됨 · 수정 후 ↻ 시안 갱신)</span>
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                  <input value={igInfo.hook_number || ''} onChange={e => setIgField('hook_number', e.target.value)} placeholder="핵심 숫자 (예: 991건)"
+                    style={{ width: 130, padding: '8px 10px', borderRadius: 8, border: '1px solid #E0DDD6', fontSize: 14, fontWeight: 800, color: '#C53030', fontFamily: 'inherit' }} />
+                  <input value={igInfo.hook_label || ''} onChange={e => setIgField('hook_label', e.target.value)} placeholder="숫자 설명 (12자)"
+                    style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px solid #E0DDD6', fontSize: 12, fontFamily: 'inherit' }} />
+                </div>
+                {[0, 1, 2].map(k => (
+                  <input key={k} value={(igInfo.points || [])[k] || ''} placeholder={`요약 ${k + 1} (24자 이내)`}
+                    onChange={e => { const pts = [...(igInfo.points || ['', '', ''])]; pts[k] = e.target.value; setIgField('points', pts); }}
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid #E0DDD6', fontSize: 12, fontFamily: 'inherit', marginBottom: 4 }} />
+                ))}
+                <button onClick={refreshInfographic} disabled={igBusy}
+                  style={{ width: '100%', marginTop: 4, padding: '8px', borderRadius: 8, border: '1px solid #1A1A1A', background: '#FFF', color: '#1A1A1A', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  {igBusy ? '그리는 중…' : '↻ 시안 다시 그리기 (문구·숫자·요약 반영)'}
+                </button>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {editableThumbTexts.map((txt, i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+                  {igPreviews[i] && (
+                    <img alt={`hook-${i}`} src={mediaUrl(igPreviews[i])}
+                      style={{ width: 96, height: 170, objectFit: 'cover', borderRadius: 8, border: '1px solid #DDD', flexShrink: 0, opacity: igBusy ? 0.4 : 1 }} />
+                  )}
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <input
+                      value={txt}
+                      onChange={e => {
+                        const updated = [...editableThumbTexts];
+                        updated[i] = e.target.value;
+                        setEditableThumbTexts(updated);
+                      }}
+                      style={{
+                        flex: 1, padding: '14px 16px', borderRadius: 10,
+                        background: '#1A1A1A', border: '2px solid #333',
+                        color: '#FFF', fontSize: 17, fontWeight: 800,
+                        fontFamily: 'inherit', textAlign: 'center',
+                        letterSpacing: -0.5,
+                      }}
+                      onFocus={e => e.target.style.borderColor = accentColor}
+                      onBlur={e => e.target.style.borderColor = '#333'}
+                    />
+                    <button onClick={() => startUpload(editableThumbTexts[i])}
+                      style={{
+                        padding: '12px 18px', borderRadius: 10, border: 'none',
+                        background: accentColor, color: '#FFF',
+                        fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                        fontFamily: 'inherit', whiteSpace: 'nowrap',
+                      }}>
+                      이 썸네일로 발행 {igInfo ? '(= 첫 화면)' : ''}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {igSummary && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 6 }}>🏁 마지막 화면 · 요약 인포그래픽 (4초)</div>
+                <img alt="summary" src={mediaUrl(igSummary)} style={{ width: 180, borderRadius: 8, border: '1px solid #DDD', opacity: igBusy ? 0.4 : 1 }} />
+              </div>
+            )}
+            <button onClick={resetAll}
+              style={{ width: '100%', marginTop: 12, padding: '10px', borderRadius: 8, border: '1px solid #E0DDD6', background: '#FFF', color: '#777', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+              취소 (발행 안 함)
+            </button>
+          </div>
+        )}
+
+        {/* ══════════ 완료 ══════════ */}
+        {pipeStep === 'done' && pipeResult && (
+          <div style={{ background: '#F0FFF4', border: '1px solid #C6F6D5', borderRadius: 14, padding: '20px', marginBottom: 16, animation: 'fadeIn 0.4s ease' }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: '#276749', marginBottom: 14 }}>✅ 콘텐츠 발행 완료!</div>
+            <div style={{ fontSize: 13, color: '#2D2D2D', lineHeight: 2 }}>
+              <p style={{ margin: '0 0 6px' }}><strong>제목:</strong> {pipeResult.title}</p>
+              {pipeResult.video_url && (
+                <p style={{ margin: '0 0 6px' }}>
+                  <strong>▶️ YouTube:</strong>{' '}
+                  <a href={pipeResult.video_url} target="_blank" rel="noopener noreferrer" style={{ color: '#C53030', fontWeight: 600 }}>{pipeResult.video_url}</a>
+                </p>
+              )}
+              {pipeResult.blog_url && (
+                <p style={{ margin: '0 0 6px' }}>
+                  <strong>📝 블로그:</strong>{' '}
+                  <a href={pipeResult.blog_url} target="_blank" rel="noopener noreferrer" style={{ color: '#C53030', fontWeight: 600 }}>{pipeResult.blog_url}</a>
+                </p>
+              )}
+              {pipeResult.x_url && (
+                <p style={{ margin: '0 0 6px' }}>
+                  <strong>𝕏 X:</strong>{' '}
+                  <a href={pipeResult.x_url} target="_blank" rel="noopener noreferrer" style={{ color: '#C53030', fontWeight: 600 }}>{pipeResult.x_url}</a>
+                </p>
+              )}
+              {pipeResult.thumbnail_text && (
+                <p style={{ margin: '0 0 6px' }}><strong>썸네일:</strong> {pipeResult.thumbnail_text}</p>
+              )}
+              <p style={{ margin: '0' }}>
+                <strong>출력:</strong>{' '}
+                <code style={{ background: '#E2E8F0', padding: '2px 8px', borderRadius: 4, fontSize: 11 }}>{pipeResult.output_dir}</code>
+              </p>
+            </div>
+            <button onClick={resetAll}
+              style={{ marginTop: 14, padding: '10px 20px', borderRadius: 8, border: '1px solid #C6F6D5', background: '#FFF', color: '#276749', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+              🔄 새로운 콘텐츠 만들기
+            </button>
+          </div>
+        )}
+
+        {/* ══════════ 에러 ══════════ */}
+        {pipeStep === 'error' && (
+          <div style={{ background: '#FFF5F5', border: '1px solid #FED7D7', borderRadius: 14, padding: '16px', marginBottom: 16, fontSize: 13, color: '#C53030' }}>
+            ⚠️ 오류: {pipeError}
+            <button onClick={resetAll}
+              style={{ display: 'block', marginTop: 10, padding: '8px 16px', borderRadius: 6, border: '1px solid #C53030', background: 'transparent', color: '#C53030', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+              다시 시도
+            </button>
+          </div>
+        )}
+
+        {/* ══════════ 쇼츠 탭 끝 ══════════ */}
+        </>}
+
+        {/* ══════════════════════════════════════════════
+            롱폼 탭
+        ══════════════════════════════════════════════ */}
+        {activeTab === 'longform' && <>
+
+          {/* ── 롱폼 모드 전환: 타입4(브리핑 기반) / 수동 클립(기존) ── */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+            {[
+              { key: 't4', label: '📋 심층분석 (브리핑 기반)' },
+              { key: 'manual', label: '✂️ 수동 클립 5개' },
+            ].map(m => (
+              <button key={m.key} onClick={() => setLfMode(m.key)}
+                style={{
+                  flex: 1, padding: '8px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
+                  fontSize: 12, fontWeight: 700,
+                  background: lfMode === m.key ? '#1A1A1A' : '#FFF',
+                  color: lfMode === m.key ? '#FFF' : '#888',
+                  border: lfMode === m.key ? '1px solid #1A1A1A' : '1px solid #E0DDD6',
+                }}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          {lfMode === 't4' && (
+            <LongformT4
+              serverOnline={serverOnline}
+              presetDate={t4Preset?.date}
+              presetRank={t4Preset?.rank}
+              onPresetConsumed={() => setT4Preset(null)}
+            />
+          )}
+
+          {lfMode === 'manual' && <>
+          {/* ── 롱폼: 입력 (idle) ── */}
+          {lfStep === 'idle' && (
+            <div style={{ animation: 'fadeIn 0.3s ease' }}>
+
+              {/* 모드 표시 */}
+              <div style={{ textAlign: 'center', marginBottom: 12 }}>
+                <span style={{
+                  display: 'inline-block', padding: '4px 16px', borderRadius: 20,
+                  background: '#C5303015', border: '1px solid #C5303030',
+                  fontSize: 12, fontWeight: 700, color: '#C53030',
+                }}>
+                  🎬 롱폼 · 이번 주 핵심 발언
+                </span>
+              </div>
+
+              {/* 영상 제목 + 인트로 */}
+              <div style={{ background: '#FFF', borderRadius: 14, padding: '20px', border: '1px solid #E0DDD6', marginBottom: 12 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 8, display: 'block' }}>
+                  🎬 영상 제목
+                </label>
+                <input value={lfTitle} onChange={e => setLfTitle(e.target.value)}
+                  placeholder="예: 이번 주 핵심 발언 5선"
+                  style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid #E0DDD6', fontSize: 14, fontFamily: 'inherit', background: '#FAFAF8', color: '#1A1A1A' }}
+                  onFocus={e => e.target.style.borderColor = '#C53030'} onBlur={e => e.target.style.borderColor = '#E0DDD6'}
+                />
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#555', marginTop: 14, marginBottom: 8, display: 'block' }}>
+                  📎 인트로 멘트 <span style={{ fontWeight: 400, color: '#AAA' }}>(선택)</span>
+                </label>
+                <input value={lfIntro} onChange={e => setLfIntro(e.target.value)}
+                  placeholder="예: 이번 주 가장 뜨거웠던 발언 5가지, 팩트로 벱니다."
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #E0DDD6', fontSize: 13, fontFamily: 'inherit', background: '#FAFAF8', color: '#1A1A1A' }}
+                  onFocus={e => e.target.style.borderColor = '#C53030'} onBlur={e => e.target.style.borderColor = '#E0DDD6'}
+                />
+              </div>
+
+              {/* 클립 1~5 아코디언 */}
+              {lfClips.map((clip, idx) => {
+                const filled = clip.speaker.trim() || clip.commentary.trim() || clip.videoFile;
+                return (
+                  <div key={idx} style={{
+                    background: '#FFF', borderRadius: 14, border: filled ? '2px solid #C5303050' : '1px solid #E0DDD6',
+                    marginBottom: 8, overflow: 'hidden', transition: 'all 0.2s',
+                  }}>
+                    {/* 아코디언 헤더 */}
+                    <button onClick={() => toggleClipExpand(idx)}
+                      style={{
+                        width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '14px 16px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit',
+                      }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{
+                          width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 12, fontWeight: 800,
+                          background: filled ? '#C53030' : '#E0DDD6', color: filled ? '#FFF' : '#999',
+                        }}>{idx + 1}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: clip.speaker ? '#1A1A1A' : '#AAA' }}>
+                          {clip.speaker || `클립 ${idx + 1}`}
+                        </span>
+                        {clip.videoFile && <span style={{ fontSize: 10, color: '#2D8544', fontWeight: 600 }}>✓ 영상</span>}
+                      </div>
+                      <span style={{ fontSize: 14, color: '#AAA', transition: 'transform 0.2s', transform: clip.expanded ? 'rotate(180deg)' : 'rotate(0)' }}>▼</span>
+                    </button>
+
+                    {/* 아코디언 내용 */}
+                    {clip.expanded && (
+                      <div style={{ padding: '0 16px 16px', animation: 'fadeIn 0.2s ease' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 4, display: 'block' }}>발언자 이름</label>
+                            <input value={clip.speaker} onChange={e => updateClip(idx, 'speaker', e.target.value)}
+                              placeholder="예: 이재명 대통령"
+                              style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #E0DDD6', fontSize: 12, fontFamily: 'inherit', background: '#FAFAF8' }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 4, display: 'block' }}>발언 자막</label>
+                            <input value={clip.subtitle} onChange={e => updateClip(idx, 'subtitle', e.target.value)}
+                              placeholder="영상 위에 표시될 자막"
+                              style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #E0DDD6', fontSize: 12, fontFamily: 'inherit', background: '#FAFAF8' }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* 영상 업로드 */}
+                        <label style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 4, display: 'block' }}>발언 영상 (mp4)</label>
+                        <div style={{
+                          padding: '12px', borderRadius: 10, border: '1.5px dashed #E0DDD6',
+                          background: clip.videoFile ? '#F0FFF4' : '#FAFAF8',
+                          textAlign: 'center', cursor: 'pointer', marginBottom: 10,
+                          transition: 'all 0.2s',
+                        }}
+                          onClick={() => document.getElementById(`lf-video-${idx}`).click()}
+                        >
+                          <input id={`lf-video-${idx}`} type="file" accept="video/mp4,video/*" style={{ display: 'none' }}
+                            onChange={e => e.target.files[0] && handleVideoUpload(idx, e.target.files[0])}
+                          />
+                          {clip.videoFile ? (
+                            <span style={{ fontSize: 12, color: '#2D8544', fontWeight: 600 }}>🎥 {clip.videoName}</span>
+                          ) : (
+                            <span style={{ fontSize: 12, color: '#AAA' }}>📁 클릭하여 영상 업로드</span>
+                          )}
+                        </div>
+
+                        {/* 해설 코멘트 */}
+                        <label style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 4, display: 'block' }}>해설 코멘트 (TTS 나레이션)</label>
+                        <textarea value={clip.commentary} onChange={e => updateClip(idx, 'commentary', e.target.value)}
+                          placeholder="BluntEdge가 읽을 나레이션 대본을 입력하세요..."
+                          rows={3}
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #E0DDD6', fontSize: 12, fontFamily: 'inherit', background: '#FAFAF8', resize: 'vertical', lineHeight: 1.7 }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* 발행 채널 선택 */}
+              <div style={{ background: '#FFF', borderRadius: 14, padding: '16px', border: '1px solid #E0DDD6', marginBottom: 12, marginTop: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 10 }}>📢 발행 채널 선택</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {PUBLISH_CHANNELS.map(ch => (
+                    <label key={ch.key} style={{
+                      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      padding: '10px 8px', borderRadius: 10, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                      background: lfPublish[ch.key] ? '#C5303012' : '#FAFAF8',
+                      border: lfPublish[ch.key] ? '2px solid #C53030' : '1.5px solid #E0DDD6',
+                      color: lfPublish[ch.key] ? '#C53030' : '#AAA',
+                      transition: 'all 0.2s',
+                    }}>
+                      <input type="checkbox" checked={lfPublish[ch.key]}
+                        onChange={e => setLfPublish(p => ({ ...p, [ch.key]: e.target.checked }))}
+                        style={{ display: 'none' }} />
+                      <span style={{ fontSize: 16 }}>{ch.icon}</span>
+                      <span>{ch.label}</span>
+                      {lfPublish[ch.key] && <span style={{ fontSize: 14 }}>✓</span>}
+                    </label>
+                  ))}
+                </div>
+                {lfPublish.blog && (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 6 }}>📂 블로그 카테고리</div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {BLOG_CATEGORIES.map(cat => (
+                        <button key={cat} onClick={() => setLfBlogCategory(cat)}
+                          style={{
+                            flex: 1, padding: '7px 4px', borderRadius: 7, fontSize: 11, fontWeight: 600,
+                            cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.2s',
+                            background: lfBlogCategory === cat ? '#C5303015' : '#FAFAF8',
+                            border: lfBlogCategory === cat ? '1.5px solid #C53030' : '1px solid #E0DDD6',
+                            color: lfBlogCategory === cat ? '#C53030' : '#999',
+                          }}>
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 생성 버튼 */}
+              <button onClick={startLongformGeneration}
+                disabled={!lfReady}
+                style={{
+                  width: '100%', padding: '14px', borderRadius: 12, border: 'none',
+                  background: lfReady ? 'linear-gradient(135deg, #C53030, #C53030CC)' : '#DDD',
+                  color: lfReady ? '#FFF' : '#999',
+                  fontSize: 15, fontWeight: 800, cursor: lfReady ? 'pointer' : 'default',
+                  fontFamily: 'inherit', transition: 'all 0.2s', letterSpacing: -0.3,
+                }}>
+                🎬 롱폼 영상 생성 ({lfFilledClips.length}클립)
+              </button>
+
+              {/* 클립 요약 */}
+              {lfFilledClips.length > 0 && (
+                <div style={{ marginTop: 8, fontSize: 11, color: '#888', textAlign: 'center' }}>
+                  {lfFilledClips.map((c, i) => c.speaker).filter(Boolean).join(' → ')} · 예상 {lfFilledClips.length * 1}~{lfFilledClips.length * 1.5}분
+                </div>
+              )}
+
+              {!lfReady && lfFilledClips.length > 0 && !lfFilledClips.every(c => c.videoFile) && (
+                <div style={{ marginTop: 6, fontSize: 11, color: '#C53030', textAlign: 'center' }}>
+                  ⚠️ 모든 클립에 영상 파일을 업로드해주세요
+                </div>
+              )}
+
+              {/* 서버 상태 */}
+              {serverOnline === false && (
+                <div style={{ marginTop: 8, padding: '12px', borderRadius: 10, background: '#FFF5F5', border: '1px solid #FED7D7', fontSize: 12, color: '#C53030', lineHeight: 1.6 }}>
+                  ⚠️ 로컬 서버가 꺼져 있습니다.
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                    <code style={{ flex: 1, background: '#1A1A1A', color: '#00FF41', padding: '10px 12px', borderRadius: 8, fontSize: 11, fontFamily: 'monospace', display: 'block', lineHeight: 1.5 }}>
+                      cd C:\bluntedge-pipeline-v1.0\bluntedge-pipeline && python server.py
+                    </code>
+                  </div>
+                </div>
+              )}
+              {serverOnline === true && (
+                <div style={{ marginTop: 6, fontSize: 10, color: '#2D8544', textAlign: 'center' }}>● 파이프라인 서버 연결됨</div>
+              )}
+            </div>
+          )}
+
+          {/* ── 롱폼: 진행 중 ── */}
+          {lfStep === 'rendering' && (
+            <div style={{ textAlign: 'center', padding: '50px 0', animation: 'fadeIn 0.3s ease' }}>
+              <div style={{ fontSize: 42, marginBottom: 14, animation: 'pulse 1.5s infinite' }}>🎬</div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: '#555' }}>{lfMsg}<LoadingDots /></div>
+              <div style={{ fontSize: 11, color: '#AAA', marginTop: 8 }}>롱폼 합성 모드 · {lfFilledClips.length}클립</div>
+            </div>
+          )}
+
+          {/* ── 롱폼: 완료 ── */}
+          {lfStep === 'done' && lfResult && (
+            <div style={{ background: '#F0FFF4', border: '1px solid #C6F6D5', borderRadius: 14, padding: '20px', marginBottom: 16, animation: 'fadeIn 0.4s ease' }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: '#276749', marginBottom: 14 }}>✅ 롱폼 콘텐츠 발행 완료!</div>
+              <div style={{ fontSize: 13, color: '#2D2D2D', lineHeight: 2 }}>
+                <p style={{ margin: '0 0 6px' }}><strong>제목:</strong> {lfResult.title}</p>
+                <p style={{ margin: '0 0 6px' }}><strong>길이:</strong> {(lfResult.duration / 60).toFixed(1)}분 · {lfResult.clip_count}클립</p>
+                {lfResult.video_url && (
+                  <p style={{ margin: '0 0 6px' }}>
+                    <strong>▶️ YouTube:</strong>{' '}
+                    <a href={lfResult.video_url} target="_blank" rel="noopener noreferrer" style={{ color: '#C53030', fontWeight: 600 }}>{lfResult.video_url}</a>
+                  </p>
+                )}
+                {lfResult.blog_url && (
+                  <p style={{ margin: '0 0 6px' }}>
+                    <strong>📝 블로그:</strong>{' '}
+                    <a href={lfResult.blog_url} target="_blank" rel="noopener noreferrer" style={{ color: '#C53030', fontWeight: 600 }}>{lfResult.blog_url}</a>
+                  </p>
+                )}
+                {lfResult.x_url && (
+                  <p style={{ margin: '0 0 6px' }}>
+                    <strong>𝕏 X:</strong>{' '}
+                    <a href={lfResult.x_url} target="_blank" rel="noopener noreferrer" style={{ color: '#C53030', fontWeight: 600 }}>{lfResult.x_url}</a>
+                  </p>
+                )}
+                <p style={{ margin: '0' }}>
+                  <strong>출력:</strong>{' '}
+                  <code style={{ background: '#E2E8F0', padding: '2px 8px', borderRadius: 4, fontSize: 11 }}>{lfResult.output_dir}</code>
+                </p>
+              </div>
+              <button onClick={resetLongform}
+                style={{ marginTop: 14, padding: '10px 20px', borderRadius: 8, border: '1px solid #C6F6D5', background: '#FFF', color: '#276749', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                🔄 새로운 롱폼 만들기
+              </button>
+            </div>
+          )}
+
+          {/* ── 롱폼: 에러 ── */}
+          {lfStep === 'error' && (
+            <div style={{ background: '#FFF5F5', border: '1px solid #FED7D7', borderRadius: 14, padding: '16px', marginBottom: 16, fontSize: 13, color: '#C53030' }}>
+              ⚠️ 오류: {lfError}
+              <button onClick={() => { setLfStep('idle'); setLfError(''); }}
+                style={{ display: 'block', marginTop: 10, padding: '8px 16px', borderRadius: 6, border: '1px solid #C53030', background: 'transparent', color: '#C53030', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                다시 시도
+              </button>
+            </div>
+          )}
+
+          </>}
+        </>}
+
+        {/* ── Bible ── */}
+        <details style={{ marginTop: 20 }}>
+          <summary style={{ fontSize: 12, fontWeight: 600, color: '#888', cursor: 'pointer', padding: '8px 0' }}>📖 BluntEdge 바이블 요약 보기</summary>
+          <div style={{ background: '#FFF', borderRadius: 10, padding: '14px', border: '1px solid #E5E2DB', marginTop: 8, fontSize: 12, color: '#555', lineHeight: 1.7 }}>
+            <p><strong>포지션:</strong> 중도 진보 · 합리적 진보 관점 · 팩트 기반 판단</p>
+            <p><strong>톤:</strong> 날카로운 논객 · 직설 + 풍자 · 팩트 퍼스트</p>
+            <p><strong>언론:</strong> 보수 언론(조·중·동) 프레이밍 비판 · 진보 언론도 팩트 오류 시 지적</p>
+            <p><strong>금기:</strong> 양비론, 인신공격, 감정선동, 미확인정보, 보수 언론 논조 동조</p>
+            <p><strong>구조:</strong> 통념 제시 → 팩트로 뒤집기 → 한 줄 결론</p>
+          </div>
+        </details>
+
+        {/* ── Footer ── */}
+        <div style={{ marginTop: 30, textAlign: 'center', padding: '16px 0', borderTop: '1px solid #E0DDD6' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginBottom: 8 }}>
+            {Object.entries(CHANNELS).map(([key, ch]) => (
+              <a key={key} href={ch.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#888', textDecoration: 'none' }}>{ch.icon} {ch.label}</a>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, color: '#AAA' }}>BluntEdge Content Agent v3.4 · Powered by Claude</div>
         </div>
       </div>
-      <div style={{ flex:1,overflow:"hidden",display:"flex",flexDirection:"column" }}>
-        {tab==="calendar"  && <CalendarTab onEventsLoaded={setGcalEvents} externalToken={gcalToken} onTokenChange={handleTokenChange}/>}
-        {tab==="planner"   && <PlannerTab gcalEvents={gcalEvents}/>}
-        {tab==="backup"    && <BackupTab gcalToken={gcalToken}/>}
-      </div>
-      <div style={{ background:C.surface,borderTop:`1px solid ${C.border}`,display:"flex",flexShrink:0,paddingBottom:"env(safe-area-inset-bottom,0px)" }}>
-        {tabs.map(t => <BottomTab key={t.id} active={tab===t.id} onClick={()=>setTab(t.id)} icon={t.icon} label={t.label}/>)}
-      </div>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}*{-webkit-tap-highlight-color:transparent}::-webkit-scrollbar{width:3px}::-webkit-scrollbar-thumb{background:#3a3a36;border-radius:2px}input[type=date],input[type=time]{color-scheme:dark}`}</style>
     </div>
   );
 }

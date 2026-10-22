@@ -1,16 +1,11 @@
 import { BLUNTEDGE_SYSTEM, CHANNEL_PROMPTS } from '../config/bible.js';
 
-const API_URL = 'https://api.anthropic.com/v1/messages';
+// Claude 호출은 로컬 파이프라인 서버를 거칩니다.
+// 키는 서버의 .env(ANTHROPIC_API_KEY)에만 있고, 앱에는 넣지 않습니다.
+const PIPELINE_URL = 'http://localhost:5050';
+const API_URL = `${PIPELINE_URL}/api/claude`;
 
 export async function generateContent(channel, topic, context = '') {
-  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
-
-  if (!apiKey) {
-    throw new Error(
-      'API 키가 설정되지 않았습니다. .env 파일에 VITE_ANTHROPIC_API_KEY를 추가하세요.'
-    );
-  }
-
   const chConfig = CHANNEL_PROMPTS[channel];
   if (!chConfig) throw new Error(`Unknown channel: ${channel}`);
 
@@ -18,21 +13,24 @@ export async function generateContent(channel, topic, context = '') {
     ? `[주제] ${topic.trim()}\n\n[추가 맥락/참고 정보]\n${context.trim()}\n\n${chConfig.prompt}`
     : `[주제] ${topic.trim()}\n\n${chConfig.prompt}`;
 
-  const response = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4000,
-      system: BLUNTEDGE_SYSTEM,
-      messages: [{ role: 'user', content: userMsg }],
-    }),
-  });
+  let response;
+  try {
+    response = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 4000,
+        system: BLUNTEDGE_SYSTEM,
+        messages: [{ role: 'user', content: userMsg }],
+      }),
+    });
+  } catch {
+    throw new Error('로컬 서버에 연결할 수 없습니다. 파이프라인 폴더에서 python server.py 를 실행하세요.');
+  }
 
   if (!response.ok) {
     const errBody = await response.text();

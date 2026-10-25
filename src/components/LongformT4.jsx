@@ -74,7 +74,12 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
   const [weekly, setWeekly] = useState(null);
   const [projects, setProjects] = useState([]);
   const [selectedDate, setSelectedDate] = useState('');
-  const [minutes, setMinutes] = useState(7);
+  const [minutes, setMinutes] = useState(10);
+  // 롱폼 개혁안 v1 (2026-10-25): 주간 결산(주 1, 금 저녁) · 검색형 정리(격주) · 기존 브리핑 추천
+  const [mode, setMode] = useState('weekly'); // weekly | explainer | briefing
+  const [shorts, setShorts] = useState([]);
+  const [pickedShorts, setPickedShorts] = useState([]);
+  const [topic, setTopic] = useState('');
   const [note, setNote] = useState('');
   const [focusRank, setFocusRank] = useState(null); // 브리핑 탭에서 특정 이슈로 들어온 경우
 
@@ -111,6 +116,10 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
         const fresh = r.recommendations.find(x => !x.already_used) || r.recommendations[0];
         setSelectedDate(fresh.date);
       }
+      try {
+        const s = await (await fetch(`${PIPELINE_URL}/api/longform/shorts?days=7`)).json();
+        setShorts(s.shorts || []);
+      } catch { setShorts([]); }
       const p = await (await fetch(`${PIPELINE_URL}/api/longform/projects`)).json();
       setProjects((p.projects || []).filter(x => x.stage !== 'published'));
     } catch { /* 서버 꺼짐 — 상단 상태 표시로 충분 */ }
@@ -119,6 +128,7 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
   useEffect(() => { if (serverOnline) loadLists(); }, [serverOnline]);
   useEffect(() => {
     if (presetDate) {
+      setMode('briefing'); setMinutes(7);
       setSelectedDate(presetDate); setFocusRank(presetRank || null); setStep('pick');
       onPresetConsumed && onPresetConsumed();
     }
@@ -127,13 +137,23 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
   const fail = (e) => { setStep('error'); setError(typeof e === 'string' ? e : e.message); };
 
   // ── ② 대본 생성 ──
+  const canStart = mode === 'weekly' ? pickedShorts.length > 0
+    : mode === 'explainer' ? topic.trim().length > 0 : !!selectedDate;
+  const switchMode = (m) => { setMode(m); setMinutes(m === 'weekly' ? 10 : 7); };
+  const toggleShort = (id) => setPickedShorts(xs => xs.includes(id) ? xs.filter(x => x !== id) : [...xs, id]);
+
   const startScript = async () => {
-    if (!selectedDate) return;
+    if (!canStart) return;
     setStep('scripting'); setMsg('대본 생성 + 팩트체크 중'); setError('');
+    const payload = mode === 'weekly'
+      ? { mode, short_ids: pickedShorts, target_minutes: minutes, ceo_note: note }
+      : mode === 'explainer'
+        ? { mode, topic: topic.trim(), target_minutes: minutes, ceo_note: note }
+        : { mode: 'briefing', date: selectedDate, target_minutes: minutes, ceo_note: note, issue_rank: focusRank };
     try {
       const d = await (await fetch(`${PIPELINE_URL}/api/longform/script`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: selectedDate, target_minutes: minutes, ceo_note: note, issue_rank: focusRank }),
+        body: JSON.stringify(payload),
       })).json();
       if (d.error) throw new Error(d.error);
       pollJob(d.job_id, j => setMsg(j.step || ''), j => {
@@ -360,7 +380,7 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
           <span style={{ padding: '4px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700,
             background: weekly.remaining ? `${RED}15` : '#F0FFF4', color: weekly.remaining ? RED : '#276749',
             border: `1px solid ${weekly.remaining ? RED + '30' : '#C6F6D5'}` }}>
-            🎬 이번 주 타입4 롱폼 {weekly.published}/{weekly.target}편 {weekly.remaining ? `· ${weekly.remaining}편 남음` : '· 목표 달성'}
+            🎬 이번 주 롱폼 {weekly.published}/{weekly.target}편 {weekly.remaining ? `· ${weekly.remaining}편 남음` : '· 목표 달성'}
           </span>
         </div>
       )}
@@ -383,6 +403,50 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
         )}
 
         <div style={card}>
+          <div style={label}>🧭 만들 롱폼</div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[['weekly', '📅 주간 결산', '매주 금 저녁'], ['explainer', '🔎 검색형 정리', '격주'], ['briefing', '🎬 브리핑 추천', '기존 방식']].map(([k, t, sub]) => (
+              <button key={k} onClick={() => switchMode(k)} style={{ ...chip(mode === k), flex: 1, padding: '10px 6px' }}>
+                {t}<div style={{ fontSize: 10, fontWeight: 400, marginTop: 2 }}>{sub}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {mode === 'weekly' && (
+          <div style={card}>
+            <div style={label}>📅 이번 주 쇼츠에서 3~4개 고르기 <span style={{ fontWeight: 400, color: '#AAA' }}>(계속 시청함·조회가 높았던 것)</span></div>
+            {shorts.length === 0 && <div style={{ fontSize: 12, color: '#AAA', padding: 10 }}>최근 7일 업로드한 쇼츠가 없습니다.</div>}
+            {shorts.map(sh => {
+              const on = pickedShorts.includes(sh.id);
+              return (
+                <div key={sh.id} onClick={() => toggleShort(sh.id)}
+                  style={{ padding: 10, borderRadius: 10, marginBottom: 6, cursor: 'pointer',
+                    border: on ? `2px solid ${RED}` : '1px solid #EDE9E0', background: on ? `${RED}08` : '#FAFAF8' }}>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <span style={{ fontSize: 14 }}>{on ? '☑' : '☐'}</span>
+                    <span style={{ fontSize: 10, color: '#888' }}>{(sh.uploaded_at || '').slice(5, 16).replace('T', ' ')}</span>
+                    {!sh.has_photo && <span style={{ fontSize: 10, color: '#B7791F' }}>· 사진 없음</span>}
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#1A1A1A', marginTop: 2 }}>{sh.title}</div>
+                </div>
+              );
+            })}
+            <div style={{ fontSize: 11, color: pickedShorts.length > 4 ? RED : '#888', marginTop: 4 }}>
+              {pickedShorts.length}개 선택 {pickedShorts.length > 4 ? '· 4개 이하를 권장합니다' : ''}
+            </div>
+          </div>
+        )}
+
+        {mode === 'explainer' && (
+          <div style={card}>
+            <div style={label}>🔎 정리할 주제 <span style={{ fontWeight: 400, color: '#AAA' }}>(사람들이 검색할 말 그대로)</span></div>
+            <input value={topic} onChange={e => setTopic(e.target.value)} style={input}
+              placeholder="예: 중수청이란 / 검찰청 폐지 총정리" />
+          </div>
+        )}
+
+        {mode === 'briefing' && <div style={card}>
           <div style={label}>🎬 롱폼PD 추천 (최근 7일)</div>
           {recs.length === 0 && <div style={{ fontSize: 12, color: '#AAA', padding: 10 }}>브리핑이 없습니다. 브리핑 탭에서 먼저 실행하세요.</div>}
           {recs.map(r => {
@@ -412,12 +476,12 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
               </div>
             );
           })}
-        </div>
+        </div>}
 
         <div style={card}>
           <div style={label}>⏱️ 목표 길이</div>
           <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-            {[5, 7, 10].map(m => (
+            {[5, 7, 10, 12].map(m => (
               <button key={m} onClick={() => setMinutes(m)} style={{ ...chip(minutes === m), flex: 1 }}>
                 {m}분 <span style={{ fontWeight: 400 }}>(~{(m * KO_CHARS_PER_MIN / 1000).toFixed(1)}k자)</span>
               </button>
@@ -428,8 +492,8 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
             placeholder="예: OECD 비교는 수치로, 국민의힘 인사청문회 부분은 사실 확인된 것만" />
         </div>
 
-        <button onClick={startScript} disabled={!selectedDate || !serverOnline}
-          style={{ ...btn(true, !selectedDate || !serverOnline), width: '100%', padding: 14, fontSize: 15 }}>
+        <button onClick={startScript} disabled={!canStart || !serverOnline}
+          style={{ ...btn(true, !canStart || !serverOnline), width: '100%', padding: 14, fontSize: 15 }}>
           📝 대본 만들기 (웹검색 팩트체크 포함)
         </button>
         <div style={{ marginTop: 6, fontSize: 10, color: '#AAA', textAlign: 'center' }}>

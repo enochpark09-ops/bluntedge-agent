@@ -84,6 +84,12 @@ export default function App() {
   const [bgImage2, setBgImage2] = useState(null);
   const [bgImage1Name, setBgImage1Name] = useState('');
   const [bgImage2Name, setBgImage2Name] = useState('');
+  // ── Gemini 썸네일 (v3.5, 2026-11-02): 프롬프트 생성 → CEO가 Gemini에서 이미지 제작 → 업로드 ──
+  const [geminiPrompt, setGeminiPrompt] = useState('');
+  const [geminiBusy, setGeminiBusy] = useState(false);
+  const [geminiMsg, setGeminiMsg] = useState('');
+  const [geminiThumb, setGeminiThumb] = useState(null);
+  const [geminiThumbName, setGeminiThumbName] = useState('');
 
   // ── 시리즈 상태 ──
   const [selectedSeries, setSelectedSeries] = useState('free');
@@ -301,6 +307,7 @@ ${context}
     }
     if (bgImage1) formData.append('bg_image_1', bgImage1);
     if (bgImage2) formData.append('bg_image_2', bgImage2);
+    if (geminiThumb) formData.append('gemini_thumb', geminiThumb);
     formData.append('series', selectedSeries);
 
     try {
@@ -328,6 +335,7 @@ ${context}
               title: j.result.title,
               script: j.result.script,
               description: j.result.description,
+              gemini_thumb: !!j.result.gemini_thumb,
             });
             setPipeStep('thumbnail');
           } else if (j.status === 'done') {
@@ -390,7 +398,29 @@ ${context}
     setBgImage2Name('');
   };
 
+  const makeGeminiPrompt = async () => {
+    if (!editScript.trim()) return;
+    setGeminiBusy(true); setGeminiMsg('');
+    try {
+      const seriesName = (SERIES.find(s => s.id === selectedSeries) || {}).name || '';
+      const r = await (await fetch(`${PIPELINE_URL}/api/shorts/gemini_prompt`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: editTitle.trim(), script: editScript.trim(),
+          series_label: selectedSeries === 'free' ? '' : seriesName }),
+      })).json();
+      if (r.error) throw new Error(r.error);
+      setGeminiPrompt(r.prompt || '');
+    } catch (e) { setGeminiMsg(e.message || '프롬프트 생성 실패 (로컬 서버 확인)'); }
+    setGeminiBusy(false);
+  };
+
+  const copyGeminiPrompt = async () => {
+    try { await navigator.clipboard.writeText(geminiPrompt); setGeminiMsg('복사했습니다. Gemini에 사진 1장과 함께 붙여넣으세요.'); }
+    catch { setGeminiMsg('복사 실패 — 칸 안을 전체 선택(Ctrl+A) 후 복사하세요.'); }
+  };
+
   const resetAll = () => {
+    setGeminiPrompt(''); setGeminiMsg(''); setGeminiThumb(null); setGeminiThumbName('');
     resetPipeline();
     setTopic('');
     setContext('');
@@ -900,6 +930,46 @@ ${context}
             <textarea value={editDesc} onChange={e => setEditDesc(e.target.value)} rows={4}
               style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #E0DDD6', fontSize: 13, fontFamily: 'inherit', lineHeight: 1.7, marginBottom: 14, resize: 'vertical' }} />
 
+            {/* Gemini 썸네일 (v3.5) */}
+            <div style={{ background: '#FAFAF8', border: '1px solid #E0DDD6', borderRadius: 10, padding: 12, marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#555' }}>
+                  🎨 Gemini 썸네일 <span style={{ fontWeight: 400, color: '#AAA' }}>(선택 · 썸네일 = 영상 첫 2초)</span>
+                </span>
+                <button onClick={makeGeminiPrompt} disabled={geminiBusy || !editScript.trim()}
+                  style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #E0DDD6', background: '#FFF',
+                    fontSize: 11, fontWeight: 700, color: '#555', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                  {geminiBusy ? '만드는 중…' : geminiPrompt ? '↻ 다시 만들기' : '✨ 프롬프트 만들기'}
+                </button>
+              </div>
+              {geminiPrompt && <>
+                <textarea value={geminiPrompt} onChange={e => setGeminiPrompt(e.target.value)} rows={9}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #E0DDD6', fontSize: 12,
+                    fontFamily: 'inherit', lineHeight: 1.6, marginBottom: 8, resize: 'vertical', background: '#FFF' }} />
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <button onClick={copyGeminiPrompt}
+                    style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: '#1A1A1A', color: '#FFF',
+                      fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>📋 프롬프트 복사</button>
+                </div>
+                <div style={{ fontSize: 10, color: '#888', marginBottom: 8, lineHeight: 1.6 }}>
+                  Gemini에 인물 사진 1장 + 이 프롬프트 → 결과 이미지의 <strong>글자 맞춤법</strong>과 <strong>얼굴이 바뀌지 않았는지</strong> 확인 후 아래에 올리세요.
+                </div>
+              </>}
+              {geminiMsg && <div style={{ fontSize: 11, color: '#C53030', marginBottom: 8 }}>{geminiMsg}</div>}
+              <div onClick={() => document.getElementById('gemini-thumb').click()}
+                style={{ padding: '12px 8px', borderRadius: 10, textAlign: 'center', cursor: 'pointer',
+                  border: geminiThumb ? '2px solid #2D8544' : '1.5px dashed #E0DDD6', background: geminiThumb ? '#F0FFF4' : '#FFF' }}>
+                <input id="gemini-thumb" type="file" accept="image/*" style={{ display: 'none' }}
+                  onChange={e => { const f = e.target.files[0]; if (f) { setGeminiThumb(f); setGeminiThumbName(f.name); } }} />
+                {geminiThumb
+                  ? <div><div style={{ fontSize: 11, color: '#2D8544', fontWeight: 600 }}>✓ Gemini 썸네일 사용</div>
+                      <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>{geminiThumbName}
+                        <span onClick={ev => { ev.stopPropagation(); setGeminiThumb(null); setGeminiThumbName(''); }}
+                          style={{ marginLeft: 8, color: '#C53030', cursor: 'pointer' }}>✕ 빼기</span></div></div>
+                  : <div style={{ fontSize: 11, color: '#AAA' }}>📁 Gemini 썸네일 업로드 (안 올리면 자동 카드)</div>}
+              </div>
+            </div>
+
             {/* 배경 이미지 업로드 */}
             <label style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 8, display: 'block' }}>
               🖼️ 배경 이미지 <span style={{ fontWeight: 400, color: '#AAA' }}>(선택 · 2장 업로드 시 전반부/후반부 배경)</span>
@@ -977,7 +1047,12 @@ ${context}
         {pipeStep === 'thumbnail' && thumbCandidates.length > 0 && (
           <div style={{ background: '#FFF', borderRadius: 14, padding: '20px', border: `2px solid ${accentColor}`, marginBottom: 16, animation: 'fadeIn 0.4s ease' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: accentColor, marginBottom: 6 }}>🖼️ 썸네일 = 첫 화면 선택</div>
-            <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>고른 시안이 썸네일과 영상 첫 1.5초에 똑같이 들어갑니다. 문구를 고친 뒤 ↻로 다시 그려 확인하세요.</div>
+            <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>고른 시안이 썸네일과 영상 첫 2초에 똑같이 들어갑니다. 문구를 고친 뒤 ↻로 다시 그려 확인하세요.</div>
+            {videoData?.gemini_thumb && (
+              <div style={{ padding: '8px 12px', borderRadius: 8, background: '#1A1A1A', color: '#FFF', fontSize: 12, marginBottom: 10 }}>
+                🎨 Gemini 썸네일이 적용됩니다 — 아래 시안 중 아무거나 눌러 발행하면 됩니다 (시안 그림은 쓰이지 않음).
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
               {PUBLISH_CHANNELS.filter(ch => publishChannels[ch.key]).map(ch => (
                 <span key={ch.key} style={{
@@ -1429,7 +1504,7 @@ ${context}
               <a key={key} href={ch.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#888', textDecoration: 'none' }}>{ch.icon} {ch.label}</a>
             ))}
           </div>
-          <div style={{ fontSize: 11, color: '#AAA' }}>BluntEdge Content Agent v3.4 · Powered by Claude</div>
+          <div style={{ fontSize: 11, color: '#AAA' }}>BluntEdge Content Agent v3.6 · Powered by Claude</div>
         </div>
       </div>
     </div>

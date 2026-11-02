@@ -90,6 +90,11 @@ export default function App() {
   const [geminiMsg, setGeminiMsg] = useState('');
   const [geminiThumb, setGeminiThumb] = useState(null);
   const [geminiThumbName, setGeminiThumbName] = useState('');
+  // ── 강렬형 썸네일 문구 (v3.7): Gemini는 이미지만, 글자는 파이프라인이 올림 ──
+  const EMPTY_BOLD = { top1: '', top2: '', punch1: '', punch2: '' };
+  const [boldTexts, setBoldTexts] = useState(EMPTY_BOLD);
+  const [boldPreview, setBoldPreview] = useState('');
+  const [boldBusy, setBoldBusy] = useState(false);
 
   // ── 시리즈 상태 ──
   const [selectedSeries, setSelectedSeries] = useState('free');
@@ -308,6 +313,8 @@ ${context}
     if (bgImage1) formData.append('bg_image_1', bgImage1);
     if (bgImage2) formData.append('bg_image_2', bgImage2);
     if (geminiThumb) formData.append('gemini_thumb', geminiThumb);
+    Object.entries(boldTexts).forEach(([k, v]) => formData.append(`bold_${k}`, (v || '').trim()));
+    formData.append('bold_badge', seriesBadge());
     formData.append('series', selectedSeries);
 
     try {
@@ -336,6 +343,7 @@ ${context}
               script: j.result.script,
               description: j.result.description,
               gemini_thumb: !!j.result.gemini_thumb,
+              bold: !!j.result.bold,
             });
             setPipeStep('thumbnail');
           } else if (j.status === 'done') {
@@ -410,8 +418,29 @@ ${context}
       })).json();
       if (r.error) throw new Error(r.error);
       setGeminiPrompt(r.prompt || '');
+      if (r.bold) { setBoldTexts({ ...EMPTY_BOLD, ...r.bold }); setBoldPreview(''); }
     } catch (e) { setGeminiMsg(e.message || '프롬프트 생성 실패 (로컬 서버 확인)'); }
     setGeminiBusy(false);
+  };
+
+  const seriesBadge = () => {
+    const nm = (SERIES.find(s => s.id === selectedSeries) || {}).name || '';
+    return selectedSeries === 'free' || !nm ? 'BluntEdge' : `BluntEdge ${nm}`;
+  };
+
+  const previewBold = async () => {
+    setBoldBusy(true); setGeminiMsg('');
+    try {
+      const fd = new FormData();
+      const img = geminiThumb || bgImage1;
+      if (img) fd.append('image', img);
+      Object.entries(boldTexts).forEach(([k, v]) => fd.append(k, (v || '').trim()));
+      fd.append('badge', seriesBadge());
+      const r = await (await fetch(`${PIPELINE_URL}/api/shorts/bold_preview`, { method: 'POST', body: fd })).json();
+      if (r.error) throw new Error(r.error);
+      setBoldPreview(r.image || '');
+    } catch (e) { setGeminiMsg(e.message || '미리보기 실패 (로컬 서버 확인)'); }
+    setBoldBusy(false);
   };
 
   const copyGeminiPrompt = async () => {
@@ -421,6 +450,7 @@ ${context}
 
   const resetAll = () => {
     setGeminiPrompt(''); setGeminiMsg(''); setGeminiThumb(null); setGeminiThumbName('');
+    setBoldTexts(EMPTY_BOLD); setBoldPreview('');
     resetPipeline();
     setTopic('');
     setContext('');
@@ -934,7 +964,7 @@ ${context}
             <div style={{ background: '#FAFAF8', border: '1px solid #E0DDD6', borderRadius: 10, padding: 12, marginBottom: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#555' }}>
-                  🎨 Gemini 썸네일 <span style={{ fontWeight: 400, color: '#AAA' }}>(선택 · 썸네일 = 영상 첫 2초)</span>
+                  🎨 강렬형 썸네일 <span style={{ fontWeight: 400, color: '#AAA' }}>(Gemini는 배경 이미지만 · 글자는 여기서 · 썸네일 = 첫 2초)</span>
                 </span>
                 <button onClick={makeGeminiPrompt} disabled={geminiBusy || !editScript.trim()}
                   style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #E0DDD6', background: '#FFF',
@@ -952,7 +982,7 @@ ${context}
                       fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>📋 프롬프트 복사</button>
                 </div>
                 <div style={{ fontSize: 10, color: '#888', marginBottom: 8, lineHeight: 1.6 }}>
-                  Gemini에 인물 사진 1장 + 이 프롬프트 → 결과 이미지의 <strong>글자 맞춤법</strong>과 <strong>얼굴이 바뀌지 않았는지</strong> 확인 후 아래에 올리세요.
+                  Gemini에 인물 사진 1장 + 이 프롬프트 → <strong>글자가 없는지</strong>, <strong>얼굴이 바뀌지 않았는지</strong> 확인 후 아래에 올리세요.
                 </div>
               </>}
               {geminiMsg && <div style={{ fontSize: 11, color: '#C53030', marginBottom: 8 }}>{geminiMsg}</div>}
@@ -966,8 +996,21 @@ ${context}
                       <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>{geminiThumbName}
                         <span onClick={ev => { ev.stopPropagation(); setGeminiThumb(null); setGeminiThumbName(''); }}
                           style={{ marginLeft: 8, color: '#C53030', cursor: 'pointer' }}>✕ 빼기</span></div></div>
-                  : <div style={{ fontSize: 11, color: '#AAA' }}>📁 Gemini 썸네일 업로드 (안 올리면 자동 카드)</div>}
+                  : <div style={{ fontSize: 11, color: '#AAA' }}>📁 Gemini 배경 이미지 업로드 (안 올리면 전반부 배경 사진 사용)</div>}
               </div>
+
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#555', margin: '12px 0 6px' }}>✍️ 썸네일 글자 <span style={{ fontWeight: 400, color: '#AAA' }}>(프롬프트 만들기 때 대본에서 자동으로 채움 · 비우면 기존 자동 카드)</span></div>
+              {[['top1', '위 1줄 · 흰색 (10자 안팎)'], ['top2', '위 2줄 · 노랑 (12자 안팎)'], ['punch1', '한 방 1줄 · 빨강 테두리 (8자 안팎)'], ['punch2', '한 방 2줄 · 빨강 테두리 (8자 안팎)']].map(([k, ph]) => (
+                <input key={k} value={boldTexts[k] || ''} placeholder={ph}
+                  onChange={e => { setBoldTexts(t => ({ ...t, [k]: e.target.value })); setBoldPreview(''); }}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #E0DDD6', fontSize: 13, fontWeight: 700, fontFamily: 'inherit', marginBottom: 4,
+                    color: k === 'top2' ? '#B7791F' : k.startsWith('punch') ? '#C53030' : '#1A1A1A' }} />
+              ))}
+              <button onClick={previewBold} disabled={boldBusy || !Object.values(boldTexts).some(v => (v || '').trim())}
+                style={{ width: '100%', marginTop: 4, padding: '8px', borderRadius: 8, border: '1px solid #1A1A1A', background: '#FFF', color: '#1A1A1A', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                {boldBusy ? '그리는 중…' : '👀 썸네일 미리보기'}
+              </button>
+              {boldPreview && <img alt="bold preview" src={boldPreview} style={{ display: 'block', width: 200, margin: '10px auto 0', borderRadius: 8, border: '1px solid #DDD' }} />}
             </div>
 
             {/* 배경 이미지 업로드 */}
@@ -1048,9 +1091,13 @@ ${context}
           <div style={{ background: '#FFF', borderRadius: 14, padding: '20px', border: `2px solid ${accentColor}`, marginBottom: 16, animation: 'fadeIn 0.4s ease' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: accentColor, marginBottom: 6 }}>🖼️ 썸네일 = 첫 화면 선택</div>
             <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>고른 시안이 썸네일과 영상 첫 2초에 똑같이 들어갑니다. 문구를 고친 뒤 ↻로 다시 그려 확인하세요.</div>
-            {videoData?.gemini_thumb && (
+            {(videoData?.bold || videoData?.gemini_thumb) && (
               <div style={{ padding: '8px 12px', borderRadius: 8, background: '#1A1A1A', color: '#FFF', fontSize: 12, marginBottom: 10 }}>
-                🎨 Gemini 썸네일이 적용됩니다 — 아래 시안 중 아무거나 눌러 발행하면 됩니다 (시안 그림은 쓰이지 않음).
+                {videoData?.bold ? '🔥 강렬형 썸네일이 적용됩니다' : '🎨 Gemini 썸네일이 적용됩니다'} — 아래 시안 중 아무거나 눌러 발행하면 됩니다 (시안 그림은 쓰이지 않음).
+                {videoData?.bold && boldPreview
+                  ? <img alt="bold" src={boldPreview} style={{ display: 'block', width: 120, marginTop: 8, borderRadius: 6, border: '1px solid #444' }} />
+                  : geminiThumb && <img alt="gemini" src={URL.createObjectURL(geminiThumb)}
+                      style={{ display: 'block', width: 120, marginTop: 8, borderRadius: 6, border: '1px solid #444' }} />}
               </div>
             )}
             <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
@@ -1065,7 +1112,7 @@ ${context}
             {igInfo && (
               <div style={{ background: '#FAFAF8', border: '1px solid #E0DDD6', borderRadius: 10, padding: 12, marginBottom: 14 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 8 }}>
-                  📊 인포그래픽 확인 <span style={{ fontWeight: 400, color: '#AAA' }}>(스크립트에 있는 숫자만 자동 추출됨 · 수정 후 ↻ 시안 갱신)</span>
+                  📊 첫 화면 숫자 확인 <span style={{ fontWeight: 400, color: '#AAA' }}>(스크립트에 있는 숫자만 자동 추출됨 · 수정 후 ↻ 시안 갱신)</span>
                 </div>
                 <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
                   <input value={igInfo.hook_number || ''} onChange={e => setIgField('hook_number', e.target.value)} placeholder="핵심 숫자 (예: 991건)"
@@ -1073,14 +1120,9 @@ ${context}
                   <input value={igInfo.hook_label || ''} onChange={e => setIgField('hook_label', e.target.value)} placeholder="숫자 설명 (12자)"
                     style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px solid #E0DDD6', fontSize: 12, fontFamily: 'inherit' }} />
                 </div>
-                {[0, 1, 2].map(k => (
-                  <input key={k} value={(igInfo.points || [])[k] || ''} placeholder={`요약 ${k + 1} (24자 이내)`}
-                    onChange={e => { const pts = [...(igInfo.points || ['', '', ''])]; pts[k] = e.target.value; setIgField('points', pts); }}
-                    style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid #E0DDD6', fontSize: 12, fontFamily: 'inherit', marginBottom: 4 }} />
-                ))}
                 <button onClick={refreshInfographic} disabled={igBusy}
                   style={{ width: '100%', marginTop: 4, padding: '8px', borderRadius: 8, border: '1px solid #1A1A1A', background: '#FFF', color: '#1A1A1A', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  {igBusy ? '그리는 중…' : '↻ 시안 다시 그리기 (문구·숫자·요약 반영)'}
+                  {igBusy ? '그리는 중…' : '↻ 시안 다시 그리기 (문구·숫자 반영)'}
                 </button>
               </div>
             )}
@@ -1123,12 +1165,7 @@ ${context}
                 </div>
               ))}
             </div>
-            {igSummary && (
-              <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 6 }}>🏁 마지막 화면 · 요약 인포그래픽 (4초)</div>
-                <img alt="summary" src={mediaUrl(igSummary)} style={{ width: 180, borderRadius: 8, border: '1px solid #DDD', opacity: igBusy ? 0.4 : 1 }} />
-              </div>
-            )}
+            {/* 쇼츠 표준 v1: 끝 요약 인포그래픽은 붙이지 않음 (마지막 문장 → 첫 화면 루프) */}
             <button onClick={resetAll}
               style={{ width: '100%', marginTop: 12, padding: '10px', borderRadius: 8, border: '1px solid #E0DDD6', background: '#FFF', color: '#777', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
               취소 (발행 안 함)
@@ -1504,7 +1541,7 @@ ${context}
               <a key={key} href={ch.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#888', textDecoration: 'none' }}>{ch.icon} {ch.label}</a>
             ))}
           </div>
-          <div style={{ fontSize: 11, color: '#AAA' }}>BluntEdge Content Agent v3.6 · Powered by Claude</div>
+          <div style={{ fontSize: 11, color: '#AAA' }}>BluntEdge Content Agent v3.7 · Powered by Claude</div>
         </div>
       </div>
     </div>

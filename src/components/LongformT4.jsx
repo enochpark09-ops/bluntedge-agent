@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { CH, PIPELINE_URL, ACCENT } from '../config/channels.js';
 
 // ══════════════════════════════════════════════════════════════
 // 타입4 심층분석 롱폼 (브리핑 기반)
@@ -6,8 +7,7 @@ import { useState, useEffect } from 'react';
 //   서버: /api/longform/recommendations · script · plan · clips/search · upload_clip · render · publish
 // ══════════════════════════════════════════════════════════════
 
-const PIPELINE_URL = 'http://localhost:5050';
-const RED = '#C53030';
+const RED = ACCENT;
 const KO_CHARS_PER_MIN = 330;
 const PUBLISH_CHANNELS = [
   { key: 'youtube', icon: '▶️', label: 'YouTube' },
@@ -106,6 +106,13 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
   const [publish, setPublish] = useState({ youtube: true, blog: true, x: true });
   const [blogCat, setBlogCat] = useState('정치 분석');
   const [result, setResult] = useState(null);
+  // 발행 전 사실 확인 (v3.8)
+  const [fc, setFc] = useState(null);
+  const [fcText, setFcText] = useState('');
+  const [fcBusy, setFcBusy] = useState(false);
+  const [fcErr, setFcErr] = useState('');
+  const [fcApproved, setFcApproved] = useState(false);
+  const [synthetic, setSynthetic] = useState(false);
 
   const loadLists = async () => {
     try {
@@ -260,7 +267,24 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
     if (b - a > 90) return '클립은 90초 이하';
     return '';
   });
-  const canRender = plan && plan.sections?.length && plan.hook?.trim() && plan.closing?.trim() && clipErrors.every(e => !e);
+  const fullText = plan ? [plan.hook || '', ...(plan.sections || []).map(s => `${s.heading || ''}\n${s.lead || ''} ${s.narration || ''}`), plan.closing || ''].join('\n\n').trim() : '';
+  const fcStale = !!fc && fcText !== fullText;
+  const fcBlocked = !!fc && !fcStale && fc.counts?.['오류'] > 0;
+  const fcOk = !!fc && !fcStale && !fcBlocked && fcApproved;
+  const fcGate = CH.requireFactcheck ? fcOk : !fcBlocked;
+  const runFactcheck = async () => {
+    setFcBusy(true); setFcErr(''); setFcApproved(false);
+    try {
+      const r = await fetch(`${PIPELINE_URL}/api/factcheck`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ script: fullText, title: plan?.title || '' }),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) throw new Error(d.error || `Error ${r.status}`);
+      setFc(d); setFcText(fullText);
+    } catch (e) { setFcErr(e.message); } finally { setFcBusy(false); }
+  };
+  const canRender = plan && plan.sections?.length && plan.hook?.trim() && plan.closing?.trim() && clipErrors.every(e => !e) && fcGate;
 
   const startRender = async () => {
     if (!canRender) return;
@@ -355,6 +379,7 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
         body: JSON.stringify({
           plan_id: planId, thumbnail_text: text, title: plan.title, description: plan.description,
           publish_youtube: publish.youtube, publish_blog: publish.blog, publish_x: publish.x, blog_category: blogCat,
+          factchecked: fcOk, factcheck_blocked: fcBlocked, sources_text: fc?.sources_text || '', synthetic,
         }),
       })).json();
       if (d.error) throw new Error(d.error);
@@ -366,6 +391,7 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
     setStep('pick'); setPlan(null); setPlanId(''); setVideo(null); setResult(null); setError(''); setNote('');
     setCoverPreview(null); setCoverMsg(''); setThumbPreviews([]); setIgPreview(null); setIgMsg('');
     setSearchQ({}); loadLists();
+    setFc(null); setFcText(''); setFcErr(''); setFcApproved(false); setSynthetic(false);
   };
 
   const chars = narrChars(plan);
@@ -803,6 +829,42 @@ export default function LongformT4({ serverOnline, presetDate, presetRank, onPre
           <textarea value={plan.closing || ''} onChange={e => setField('closing', e.target.value)} rows={3} style={{ ...input, resize: 'vertical', lineHeight: 1.7, marginBottom: 10 }} />
           <label style={label}>YouTube 설명</label>
           <textarea value={plan.description || ''} onChange={e => setField('description', e.target.value)} rows={4} style={{ ...input, resize: 'vertical', lineHeight: 1.6 }} />
+        </div>
+
+        {/* 발행 전 사실 확인 (v3.8) */}
+        <div style={{ ...card, border: `1.5px solid ${fcBlocked ? '#E53E3E' : '#E0DDD6'}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <span style={label}>🔎 발행 전 사실 확인 <span style={{ fontWeight: 400, color: '#999' }}>(출처 2곳 이상 = ✅ · {CH.requireFactcheck ? '합성 전 필수' : '권장'})</span></span>
+            <button onClick={runFactcheck} disabled={fcBusy || !fullText} style={{ ...chip(false), whiteSpace: 'nowrap' }}>
+              {fcBusy ? <>확인 중<Dots /></> : fc ? '↻ 다시 확인' : '🔎 실행'}
+            </button>
+          </div>
+          {fcErr && <div style={{ fontSize: 12, color: '#C53030', marginTop: 6 }}>⚠️ {fcErr}</div>}
+          {fc && <>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#555', margin: '8px 0' }}>
+              ✅ {fc.counts?.['확인'] || 0} · ⚠️ {fc.counts?.['단일출처'] || 0} · ❓ {fc.counts?.['의혹'] || 0} · ❌ {fc.counts?.['오류'] || 0}
+              {fcStale && <span style={{ color: '#D69E2E' }}> · 대본이 바뀜 → 다시 확인</span>}
+            </div>
+            <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid #EEE', borderRadius: 8 }}>
+              {(fc.claims || []).filter(c => c.verdict !== '확인').concat((fc.claims || []).filter(c => c.verdict === '확인')).map((c, i) => (
+                <div key={i} style={{ fontSize: 11, lineHeight: 1.55, padding: '6px 8px', borderBottom: '1px solid #F0F0F0',
+                  background: c.verdict === '오류' ? '#FFF5F5' : c.verdict === '의혹' ? '#FFFBEB' : '#FFF' }}>
+                  <b>{c.icon} {c.verdict}</b>{c.one_side && <span style={{ color: '#D69E2E' }}> · 한쪽 출처</span>} — {c.claim}
+                  {c.note && <div style={{ color: '#888' }}>{c.note}</div>}
+                  {c.fix && <div style={{ color: '#2D8544' }}>→ 고칠 문장: {c.fix}</div>}
+                </div>
+              ))}
+            </div>
+            {fcBlocked && <div style={{ fontSize: 11, color: '#C53030', marginTop: 6 }}>❌ 항목을 대본에서 직접 고친 뒤 다시 확인하세요. 고치기 전엔 합성할 수 없습니다.</div>}
+            <label style={{ fontSize: 12, fontWeight: 700, color: '#555', display: 'flex', gap: 6, alignItems: 'center', marginTop: 8, cursor: 'pointer' }}>
+              <input type="checkbox" checked={fcApproved} disabled={fcStale || fcBlocked} onChange={e => setFcApproved(e.target.checked)} />
+              CEO 확인 — 판정표를 읽었고 이대로 진행합니다
+            </label>
+          </>}
+          <label style={{ fontSize: 11, color: '#777', display: 'flex', gap: 6, alignItems: 'flex-start', marginTop: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={synthetic} onChange={e => setSynthetic(e.target.checked)} style={{ marginTop: 2 }} />
+            <span>유튜브 '변경되거나 합성된 콘텐츠' 표시 — 실존 인물을 실제처럼 보이게 바꾼 이미지·음성이 있을 때만</span>
+          </label>
         </div>
 
         <div style={{ display: 'flex', gap: 8 }}>

@@ -1,11 +1,30 @@
 import { BLUNTEDGE_SYSTEM, CHANNEL_PROMPTS } from '../config/bible.js';
+import { PIPELINE_URL } from '../config/channels.js';
 
 // Claude 호출은 로컬 파이프라인 서버를 거칩니다.
 // 키는 서버의 .env(ANTHROPIC_API_KEY)에만 있고, 앱에는 넣지 않습니다.
-const PIPELINE_URL = 'http://localhost:5050';
 const API_URL = `${PIPELINE_URL}/api/claude`;
 
 export async function generateContent(channel, topic, context = '') {
+  // 쇼츠 대본은 연결된 채널 서버의 bible.py(쇼츠 표준 형식)로 만든다 — 채널마다 지침이 다르다
+  if (channel === 'youtube') {
+    let r;
+    try {
+      r = await fetch(`${PIPELINE_URL}/api/shorts/script`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: topic.trim(), context: context.trim() }),
+      });
+    } catch {
+      throw new Error('로컬 서버에 연결할 수 없습니다. 파이프라인 폴더에서 python server.py 를 실행하세요.');
+    }
+    if (r.status !== 404) {
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || d.error) throw new Error(d.error || `Error code: ${r.status}`);
+      return d.script || '결과를 생성하지 못했습니다.';
+    }
+    // 404 = 예전 서버 → 아래 기존 방식
+  }
   const chConfig = CHANNEL_PROMPTS[channel];
   if (!chConfig) throw new Error(`Unknown channel: ${channel}`);
 
